@@ -4,11 +4,22 @@ The terminal client for [Trivial](https://trivial.so): clone a project to your m
 locally with its own data, sync changes both ways, and publish.
 
 ```sh
-curl -fsSL https://trivial.so/cli/install.sh | sh   # a single Node script on your PATH
+npm i -g @trivial-so/cli
 trivial login
 trivial clone you/field-notes
 cd field-notes && pnpm install
 trivial dev
+```
+
+Needs Node 22 or newer. `npx @trivial-so/cli <command>` works without installing, and every release
+is published from CI with a provenance attestation — `npm audit signatures` verifies that what you
+installed was built from this repository.
+
+If you would rather not have a global npm package, the standalone installer puts the same single
+file on your PATH and updates itself with `trivial update`:
+
+```sh
+curl -fsSL https://trivial.so/cli/install.sh | sh
 ```
 
 ## What it does
