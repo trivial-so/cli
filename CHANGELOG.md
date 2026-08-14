@@ -4,6 +4,29 @@ User-facing changes to the `trivial` CLI. Any change in behaviour bumps the vers
 entry here: the version is baked into the bundle at build time (`trivial --version`), so this file
 is how a reported version maps back to what it does.
 
+## 0.19.0 — 2026-08-14
+
+- **npm owns updates for npm installs.** `trivial update` overwrites its own file, which is right
+  for the standalone installer and wrong for a package npm manages. Both `update` and `uninstall`
+  now detect an npm install and name the command that owns the job (`npm update -g @trivial-so/cli`,
+  `npm uninstall -g @trivial-so/cli`). `trivial logout` remains the right first step before removal.
+- `trivial help` leads with the npm install.
+
+## 0.18.4 — 2026-08-14
+
+- First release published from CI over OIDC, carrying a **provenance attestation**:
+  `npm audit signatures` verifies the package was built from this repository.
+
+## 0.18.3 — 2026-08-14
+
+- **Published to npm as `@trivial-so/cli`.** The CLI's source moved to its own public repository.
+- The runtime install states its size and destination before downloading.
+- `trivial login` leads with the plain URL and a typed code; the prefilled link is offered second.
+- The local runtime installs with `--ignore-scripts`, so an install on your machine never runs a
+  third-party lifecycle script.
+- `clone` and `create` bring the project's git history when git is available, with the credential
+  helper wired for that folder. The file-sync path remains the fallback.
+
 ## 0.17.1 — 2026-08-06 (…and now it actually does)
 
 0.17.0 below claimed local sign-in worked. It did not. That release shipped the
@@ -160,10 +183,10 @@ how you confirm it still goes red.
   tree. The error names the exact replacement command.
 - **`create`'s refusal inside a codebase now hands over** instead of ending the
   conversation. It used to say Trivial "does not import an existing repo"; it now
-  points at `trivial init`. This also retires #1235, where a folder holding only
+  points at `trivial init`. This also retires the case where a folder holding only
   `.git` was called "a codebase" and turned away.
 - **`.env`, `.env.*`, `*.local` and `*.log` are withheld from pushes and
-  proposals** (#1236, shipped 2026-08-04 without a version bump — recorded here).
+  proposals** (shipped 2026-08-04 without a version bump — recorded here).
   The server force-merges these into every repo's `.gitignore` and never removes
   them, so such a file could be *written* to the server but never *committed* —
   making it invisible to every `trivial pull`, `trivial clone` and `git clone`.
@@ -266,7 +289,7 @@ how you confirm it still goes red.
 
 - **`trivial publish [-m "label"]`** — Draft → Live without a browser, and it prints
   the URL the **server** names (so a custom domain or a non-prod host is correct
-  rather than a guessed `<handle>.trivial.build`). Polls the #1165 job queue, so a
+  rather than a guessed `<handle>.trivial.build`). Polls the publish job queue, so a
   queued publish reports its position instead of hanging. It **refuses** while you
   have unpushed local edits — publishing then would silently ship the *previous*
   version while you look at newer files; `--force` if you meant it. Surfaces the
@@ -310,7 +333,7 @@ site (id, url, status, unpublished-changes).
 - `trivial status` shows `owner/slug` instead of the raw project id (stored at
   clone time).
 - An empty clone now explains itself: "no synced history yet — publish once (or
-  make an edit in the app), then `trivial pull`" (#1164 interim).
+  make an edit in the app), then `trivial pull`".
 
 ## 0.3.1 — 2026-07-28
 
