@@ -2,16 +2,13 @@
  * Build the `trivial` CLI, stripping comments out of the EMBEDDED RUNTIME SOURCE
  * before esbuild ever sees it.
  *
- * Why a plugin instead of `--minify`. The canvas-runtime authors its service-worker
- * code as `String.raw` template literals (documented at dev-handler-runtime.ts: "no
- * ${, no nested backticks"). Those comments are STRING DATA, not code — so no
- * bundler can reach them. Measured on 2026-08-07: `esbuild --minify-whitespace
- * --minify-syntax` left "an observation" x3, "" x2 and "" x2 fully intact.
+ * A plugin rather than `--minify`: the runtime ships its service-worker code as
+ * `String.raw` template literals, so those comments are STRING DATA and no bundler
+ * reaches them.
  *
- * That matters because dist/trivial.cjs is published at https://trivial.so/cli/trivial.js
- * and fetched by a documented `curl -fsSL https://trivial.so/cli/install.sh | sh`
- * installer — it is deliberately downloaded onto strangers' machines. 153 comment
- * lines of internal design rationale, issue numbers and roadmap notes rode along.
+ * dist/trivial.cjs is published at https://trivial.so/cli/trivial.js and installed by
+ * `curl -fsSL https://trivial.so/cli/install.sh | sh`, so what ships is read on other
+ * people's machines.
  *
  * The comments stay in the repo, where they explain the runtime they sit inside.
  */
@@ -38,8 +35,6 @@ let blocks = 0, removed = 0;
  *   3. HTML pages built as template literals with an inline `<script>` (the CLI's
  *      local-dev sign-in page). `stripHtmlComments` already knows that grammar —
  *      it only descends into <script>/<style> bodies and <!-- --> markup.
- *
- * Measured before this existed: `esbuild --minify` left every one of them intact.
  */
 /** Index of the backtick closing the template literal that opens at `open`.
  *  Honours \\` escapes and nested `${ … }` (whose contents may hold their own

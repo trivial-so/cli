@@ -60,11 +60,13 @@ async function loadPGlite(): Promise<any> {
   const modPath = join(dir, 'node_modules', '@electric-sql', 'pglite');
   const present = await fs.access(modPath).then(() => true).catch(() => false);
   if (!present) {
-    console.log(`  installing the local data runtime (once) → ${dir}`);
+    console.log(`  installing the local data runtime (~25 MB, once) → ${dir}`);
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'trivial-cli-runtime', private: true }) + '\n', 'utf8');
     await new Promise<void>((resolve, reject) => {
-      execFile('npm', ['install', '--silent', '--no-audit', '--no-fund', `@electric-sql/pglite@${PGLITE_VERSION}`],
+      // --ignore-scripts — see handlers.ts: an install on the maker's machine never runs a
+      // third-party lifecycle script. PGLite is pure WebAssembly and needs none.
+      execFile('npm', ['install', '--silent', '--no-audit', '--no-fund', '--ignore-scripts', `@electric-sql/pglite@${PGLITE_VERSION}`],
         { cwd: dir, timeout: 300_000 },
         (err) => (err ? reject(new Error(`could not install the local data runtime: ${err.message}`)) : resolve()));
     });

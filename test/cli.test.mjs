@@ -327,7 +327,7 @@ test('create carries the .git repo of the project it just scaffolded', async () 
   mock.routes['POST /api/sites'] = () => [201, { site: { id: 'site-1', project_id: PROJECT, project_slug: 'untitled-7', handle: 'h' } }];
   mock.routes[`PATCH /api/projects/${PROJECT}`] = ({ body }) => [200, { project: { slug: body.slug } }];
   mock.routes['GET /api/cli/whoami'] = () => [200, { user: { id: 'u1', username: 'dev', name: 'Dev' } }];
-  // Answered but distinguishable: if the git path silently regressed, this file appears and the
+  // Answered but distinguishable: if the git path silently stops running, this file appears and the
   // assertions below say which path ran rather than just "something is missing".
   mock.routes[`GET /api/projects/${PROJECT}/changes`] = () => [200, {
     head: 'feedsha', rebuilt: false, truncated: false,
@@ -443,7 +443,7 @@ test('push sends the local diff and advances the baseline', async () => {
 
 // `pnpm-lock.yaml` ships in the clone, any `pnpm install` rewrites it, and the server's
 // write path refuses it (system-paths.ts). Because the write-set is validate-all-then-write-all,
-// bundling it used to reject the WHOLE push: measured against a real project, a legitimate source
+// bundling it rejects the WHOLE push: a legitimate source
 // edit sent alongside a touched lockfile never landed, under a message that didn't name the file.
 // So the CLI partitions platform-managed paths out — and must SAY so, never drop them silently.
 test('push skips platform-managed files and still lands the real edit', async () => {
@@ -901,11 +901,11 @@ test('git-credential get: silent when nobody is logged in', async () => {
 
 test('git-credential get: matches a local mirror on its own domain + port', async () => {
   const { home, work, base } = freshDirs();
-  writeCreds(home, { 'https://ol.local:3030': 'trv_atlas' });
+  writeCreds(home, { 'https://example.test:3030': 'trv_mirror' });
   const r = await runWithStdin(['git-credential', 'get'], {
-    home, cwd: work, stdin: 'protocol=https\nhost=git.ol.local:3443\n\n',
+    home, cwd: work, stdin: 'protocol=https\nhost=git.example.test:3443\n\n',
   });
-  assert.match(r.out, /^password=trv_atlas$/m);
+  assert.match(r.out, /^password=trv_mirror$/m);
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -1063,7 +1063,7 @@ test('push withholds .env / *.log instead of uploading a file no clone can ever 
 });
 
 // ── the create/init split ────────────────────────────────────────
-// `init` used to mean "scaffold a new project"; it now means "adopt this folder", and `create`
+// `init` means "adopt this folder" and `create`
 // took over the old job. The old forms must HARD-ERROR for one minor version rather than be
 // reinterpreted: `trivial init my-app` under the new meaning would adopt the CURRENT folder into a
 // project named "my-app" — a project built from the wrong tree, silently.
@@ -1329,7 +1329,7 @@ test('a null head does not wipe a healthy folder\'s sync point', async () => {
   const { home, work, base } = freshDirs();
   clonedFixture(home, work);
   // What the server returns on ANY git failure, including its 20s timeout — indistinguishable in
-  // shape from an empty snapshot. This used to null baseSha and promote every later pull to a
+  // shape from an empty snapshot. Treating it as an answer would null baseSha and promote every later pull to a
   // full re-sync.
   mock.routes[CHANGES] = () => [200, { head: null, rebuilt: false, truncated: false, files: [] }];
   const r = await run(['pull'], { home, cwd: work });

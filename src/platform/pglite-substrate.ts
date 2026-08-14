@@ -130,7 +130,7 @@ swEvent({ step: 'install', level: 'dim', message: 'pglite substrate registered' 
 /**
  * The full substrate as the Service Worker splices it: the host-agnostic core plus the SW
  * bridge. Concatenation order is the contract — `getServiceWorkerSource()` emits exactly what it
- * emitted before this file was split (asserted in __tests__/pglite-host-seam.test.ts).
+ * emitted before this file was split.
  */
 export const PGLITE_SUBSTRATE_SOURCE = PGLITE_CORE_SOURCE + PGLITE_SW_BRIDGE_SOURCE;
 
@@ -347,21 +347,14 @@ async function __dataViaHost(request, url, bundle, clientId) {
 
   // Relay through the frame that ASKED, which then hands the request up to the workshop.
   //
-  // This used to post straight at the data host, found with
-  // clients.matchAll({includeUncontrolled:true}) filtered on '/data-host/'. That cannot work in
-  // production and always returned zero: **Clients.matchAll() is same-origin only.** This worker is
-  // registered from the shell on preview.trivial.so; the host frame is mounted by the workshop on
-  // api.trivial.so. A Service Worker cannot see a client on another origin, so every app fetch got
-  // the 503 below — in 2 ms, not as a timeout — while the Data panel worked fine, because IT reaches
-  // the same host by parent↔iframe postMessage, which crosses origins.
+  // Clients.matchAll() is SAME-ORIGIN ONLY, so this worker cannot reach the data host directly:
+  // the worker is registered from the shell on one origin, and the host frame is mounted by the
+  // workshop on another. There is one path here rather than a same-origin fast path beside a
+  // cross-origin fallback, because in local dev all three collapse to one host — a route only
+  // production takes is a route only production exercises.
   //
-  // Invisible in local dev by construction, where all three collapse to one host. That is the same
-  // trap that produced the manifest 401 (dc52da89f1) one layer up, and the reason there is now ONE
-  // path here rather than a same-origin fast path beside a cross-origin fallback: a route that only
-  // production takes is a route only production tests.
-  //
-  // The requesting client is reachable — it is this worker's own controlled frame, same origin by
-  // definition — and it has a parent that spans the gap. So the chain is:
+  // The requesting client IS reachable: it is this worker's own controlled frame, same origin by
+  // definition, and it has a parent that spans the gap. So the chain is:
   //
   //   SW -> shell frame (preview) -> workshop (trivial.so) -> data host (api) -> worker -> PGlite
   //

@@ -51,13 +51,9 @@ function shq(value: string): string {
 /**
  * The same helper, but pointing at THIS process rather than at PATH.
  *
- * `install.sh` drops the CLI in `$HOME/.local/bin` and *warns* when that is not on PATH — so
- * `!trivial git-credential` is exactly as reliable as the maker's shell profile. That was fine while
- * the helper only served the documented one-time `git config --global` step: a person who typed that
- * command has `trivial` on PATH by construction. It is NOT fine now that a clone authenticates
- * through it by default, because the failure is silent-ish and total: git reports
- * `trivial: not found`, the clone 401s, and the maker gets a snapshot with no history and no idea
- * why. Measured against production on 2026-08-14, which is how this function came to exist.
+ * `install.sh` drops the CLI in `$HOME/.local/bin`, which is not always on PATH — and a clone
+ * authenticates through the helper by default, so a PATH miss is total: git reports
+ * `trivial: not found`, the clone 401s, and the folder arrives with no history.
  *
  * Invoking `<node> <script> git-credential` rather than the script alone covers both shapes the CLI
  * runs in — the installed shebang file and a bare `node dist/trivial.cjs`.

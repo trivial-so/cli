@@ -41,14 +41,11 @@ export async function hashTree(folder: string): Promise<Record<string, string>> 
  * runner is the sole legitimate writer to the lockfiles; `.npmrc` / `pnpm-workspace.yaml` carry the
  * supply-chain floor; `.trivialrc.json` is the scaffold's ownership manifest.
  *
- * These are here because `pnpm-lock.yaml` ships IN the clone and is rewritten by any `pnpm install`
- * — so the most routine thing a developer does (add a dependency) used to make every later push
- * fail. Measured against a real project: the write-set is validate-all-then-write-all, so one
- * denied path rejects the WHOLE set — a legitimate source edit bundled with a touched lockfile
- * never landed, and the server's message ("a file targets a protected path") doesn't name the file.
+ * They are partitioned out because `pnpm-lock.yaml` ships IN the clone and any `pnpm install`
+ * rewrites it: the write-set is validate-all-then-write-all, so one denied path would reject the
+ * WHOLE set — a legitimate source edit bundled with a touched lockfile would never land.
  *
- * The CLI is not the authority here — the server still refuses these on its own. This only keeps a
- * refusal the maker cannot act on from silently blocking work they can. Skipped paths are always
+ * The CLI is not the authority here; the server refuses these on its own. Skipped paths are always
  * REPORTED, never silently dropped.
  */
 const PLATFORM_MANAGED = new Set([
@@ -74,19 +71,15 @@ export function isPlatformManaged(rel: string): boolean {
  * the build's cwd IS the source dir (`--mount source=${sourceDir},target=/work`
  * with `-w /work`), which is exactly where Vite's default `envDir` looks. Any
  * `VITE_`-prefixed value is then INLINED into the client bundle at build time
- * and served publicly, forever, in every retained version. Verified
- * empirically: a `.env` holding `VITE_STRIPE_SECRET=sk_live_…` put that value
- * verbatim into `dist/assets/*.js`.
+ * and served publicly, in every retained version.
  *
  * `*.local` is included because the scaffold's own .gitignore carries it and
  * it matches `.env.local` / `.env.production.local` — Vite's documented
  * convention for exactly the values you least want shipped.
  *
- * Partitioned, not refused: the server's write path still ACCEPTS these
- * (they are deliberately user-owned dotfiles, system-paths.ts), and a push is
- * all-or-nothing, so refusing here would fail the whole set over a file the
- * maker never meant to send. Skipping + reporting is the same contract
- * PLATFORM_MANAGED already uses.
+ * Partitioned, not refused: the server's write path still ACCEPTS these (they
+ * are user-owned dotfiles) and a push is all-or-nothing, so refusing here would
+ * fail the whole set over a file the maker never meant to send.
  */
 export function isNeverUploadable(rel: string): boolean {
   const base = rel.split('/').pop() ?? rel;
@@ -100,11 +93,9 @@ export interface LocalDiff { writes: string[]; deletes: string[]; skipped: strin
  *  never-uploadable paths withheld (they would be accepted but never committed —
  *; see isNeverUploadable). Both are REPORTED, never silently dropped.
  *
- *  A withheld path that is ALREADY in the baseline is a special case worth being
- *  precise about: an older CLI (≤0.13.0) may have uploaded it before this rule
- *  existed. Deleting it is a real write the server accepts and the maker wants,
- *  so deletes of already-tracked paths are NOT withheld — that is the only way
- *  to clean up what a previous version sent. */
+ *  A withheld path ALREADY in the baseline is the exception: deleting it is a real
+ *  write the server accepts and the maker wants, so deletes of already-tracked
+ *  paths are NOT withheld. */
 export function diffLocal(current: Record<string, string>, baseline: Record<string, string>): LocalDiff {
   const writes: string[] = [];
   const deletes: string[] = [];

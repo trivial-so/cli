@@ -1,6 +1,6 @@
 {
   "name": "@trivial-so/cli",
-  "version": "0.18.0",
+  "version": "0.18.3",
   "type": "module",
   "description": "The Trivial CLI — clone, run, and publish your Trivial project from your terminal.",
   "license": "MIT",

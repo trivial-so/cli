@@ -8,7 +8,7 @@
  * environment to reach. That is the same property the published run tier relies on, achieved the
  * same way — the same binary, the same shim, the same structured-op contract.
  *
- * The four pieces, each mirroring the platform's own implementation:
+ * The four pieces:
  *
  *   1. BUNDLE   `handlerBundleOptions` (shared, not copied) — esbuild feeds the TRUSTED
  *               `worker-entry` shim via stdin, aliasing `virtual:handler` to the maker's module.
@@ -41,7 +41,7 @@ import { join } from 'node:path';
 import { handlerBundleOptions } from './platform/bundle-options.js';
 
 /** Pinned like PGLite: the local runtime should not drift from the one the run tier spawns. */
-const WORKERD_VERSION = '1.20260705.1';   // the version the run tier spawns (prod ~/workerd-host-bin)
+const WORKERD_VERSION = '1.20260705.1';   // the version the run tier spawns
 const ESBUILD_VERSION = '0.28.0';   // matches api/node_modules — the bundler the publish path uses
 
 const HANDLER_EXTS = ['.ts', '.js', '.mts', '.mjs'];
@@ -56,7 +56,10 @@ async function npmInstall(pkgs: string[]): Promise<void> {
     await fs.writeFile(pkgJson, JSON.stringify({ name: 'trivial-cli-runtime', private: true }) + '\n', 'utf8');
   }
   await new Promise<void>((resolve, reject) => {
-    execFile('npm', ['install', '--silent', '--no-audit', '--no-fund', ...pkgs], { cwd: dir, timeout: 600_000 },
+    // --ignore-scripts: this install runs on the MAKER'S machine, so a compromised release of
+    // workerd or esbuild never gets a lifecycle script on it. Both ship their platform binary as
+    // an OPTIONAL DEPENDENCY rather than a postinstall download, so nothing is lost.
+    execFile('npm', ['install', '--silent', '--no-audit', '--no-fund', '--ignore-scripts', ...pkgs], { cwd: dir, timeout: 600_000 },
       (err) => (err ? reject(new Error(`could not install the local handler runtime: ${err.message}`)) : resolve()));
   });
 }
@@ -65,7 +68,7 @@ async function npmInstall(pkgs: string[]): Promise<void> {
 export async function ensureWorkerd(): Promise<string> {
   const bin = join(runtimeDir(), 'node_modules', '.bin', 'workerd');
   if (await fs.access(bin).then(() => true).catch(() => false)) return bin;
-  console.log('  installing the local handler runtime (once) — workerd + esbuild');
+  console.log(`  installing the local handler runtime (~160 MB, once) — workerd + esbuild → ${runtimeDir()}`);
   await npmInstall([`workerd@${WORKERD_VERSION}`, `esbuild@${ESBUILD_VERSION}`]);
   return bin;
 }
@@ -104,15 +107,15 @@ async function freePort(): Promise<number> {
 }
 
 /**
- * Pick the gateway's bind address. Prod uses a DEDICATED loopback IP (`WORKERD_EGRESS_ALLOW=127.0.0.2/32`)
- * rather than 127.0.0.1, and the reason matters more on a laptop than on a server: `network(allow=…)`
+ * Pick the gateway's bind address. A DEDICATED loopback IP rather than 127.0.0.1, and the reason
+ * matters more on a laptop than on a server: `network(allow=…)`
  * is CIDR-only, so allowing 127.0.0.1/32 would also let a handler reach everything else the maker has
  * listening on localhost — their Postgres, their other dev servers, a company VPN proxy. A dedicated
  * address narrows the isolate's whole world to our gateway.
  *
  * Linux gives the entire 127.0.0.0/8 to loopback, so 127.0.0.2 just works. macOS configures only
- * 127.0.0.1 by default, so we fall back — and SAY so, because that fallback widens what a handler can
- * reach and the maker deserves to know rather than discover.
+ * 127.0.0.1 by default, so we fall back — and SAY so, because that fallback widens what a handler
+ * can reach.
  */
 export async function pickGatewayHost(): Promise<{ host: string; narrowed: boolean }> {
   const ok = await new Promise<boolean>((resolve) => {

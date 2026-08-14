@@ -128,7 +128,7 @@ function __devRejectWithheldWrites(entries, meta, ctx) {
   if (denied.length) throw new Error('forbidden: cannot write withheld field(s): ' + denied.join(', '));
 }
 
-// The single GUC-stamped owner column used to test row-ownership for 'owner' rules — null when there isn't
+// The single GUC-stamped owner column that tests row-ownership for 'owner' rules — null when there isn't
 // EXACTLY one (0 ⇒ can't test; >1 ⇒ ambiguous), so 'owner' rules then FAIL CLOSED. safeIdent-guarded.
 function __devOwnerColOf(meta) {
   if (meta.owner.length !== 1) return null;

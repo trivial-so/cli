@@ -29,10 +29,10 @@ export function parseCredentialInput(raw: string): Record<string, string> {
  * Credentials are keyed by API URL (`https://api.trivial.so`); git asks about a GIT host
  * (`git.trivial.so`). The rule is that both must live under the same parent domain — strip a leading
  * `git.` and any port, then take the first user-level credential whose host is that domain or a
- * subdomain of it. That resolves prod (`git.trivial.so` → `https://api.trivial.so`) and a local
- * mirror (`git.ol.local:3443` → `https://ol.local:3030`) without a hard-coded table.
+ * subdomain of it. That resolves `git.trivial.so` → `https://api.trivial.so`, and a self-hosted
+ * mirror, without a hard-coded table.
  *
- * Deliberately conservative: an unmatched host returns null and the helper stays SILENT, which makes
+ * Conservative on purpose: an unmatched host returns null and the helper stays SILENT, which makes
  * git fall through to its next helper or prompt — exactly what should happen for github.com.
  */
 export function apiUrlForGitHost(host: string, credentialKeys: string[]): string | null {

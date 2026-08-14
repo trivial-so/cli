@@ -13,21 +13,16 @@ export interface State {
   /**
    * The paths the CLOUD is known to hold, as of the last pull.
    *
-   * Separate from `files` on purpose, and the distinction is load-bearing. `files` is the LOCAL
-   * tree at the last sync — `pushLocal` sets it from a full `hashTree`, so it also contains paths
-   * the CLI deliberately never sent (`.env`, `*.log`, the platform-managed lockfiles) and paths it
-   * did send that the server accepted but never committed. That last class is not hypothetical:
-   * the server's checkpoint is `git add -A`, which honours the project's `.gitignore`, so a write
-   * to e.g. `.trivial-deps/x` returns 200, lands on disk, and never enters the tree — verified
-   * against prod.
+   * Distinct from `files`, which is the LOCAL tree at the last sync: `files` also holds paths the
+   * CLI never sends (`.env`, `*.log`, the platform-managed lockfiles) and paths the server accepted
+   * but never committed — its checkpoint is `git add -A`, which honours the project's `.gitignore`.
    *
-   * So a path's absence from a full-tree payload does NOT mean the cloud deleted it, and pruning
-   * from `files` would delete the maker's own files. Only a path we WATCHED ARRIVE from the cloud
-   * and then watched disappear is provably deleted. That is what this set records.
+   * So absence from a full-tree payload does NOT mean the cloud deleted it, and pruning from
+   * `files` would delete the maker's own work. Only a path watched ARRIVING from the cloud and then
+   * disappearing is provably deleted; that is what this set records.
    *
-   * Optional because folders created by ≤0.14.0 do not have it. Undefined means "no provenance
-   * yet" — the prune is skipped entirely for one pull, and the set is seeded from that pull's
-   * payload, so it self-heals without a migration.
+   * Optional: a folder without provenance skips the prune for one pull and seeds the set from that
+   * pull's payload.
    */
   cloud?: string[];
 }

@@ -46,16 +46,12 @@ var PGLITE_BOOT_CEILING_MS = 60000;
 //
 // The key is the project's IMMUTABLE id, injected by the server as __TRIVIAL_DATADIR_KEY.
 //
-// It used to be derived from this worker's own path — spaceId + SLUG. A slug is renameable
-// (PATCH /api/projects/:id takes one), and nothing migrates an IndexedDB database, so renaming a
-// project silently pointed PGlite at a name that had never existed: a fresh empty database, every
-// draft row unreachable, the old datadir orphaned in IndexedDB forever. The maker renamed their
-// project and their data was gone, with no error anywhere.
+// A renameable identifier cannot serve as the key: nothing migrates an IndexedDB database, so a
+// rename would point PGlite at a name that never existed — a fresh empty database, every draft row
+// unreachable, the old datadir orphaned.
 //
 // Injected rather than page-supplied on purpose. Every frame shares one origin, so a key the page
-// could name is a key one project's frame could use to open ANOTHER project's Local data. Deriving
-// from self.location was tamper-proof for exactly that reason; a server-side splice keeps the
-// property while dropping the mutable half.
+// could name is a key one project's frame could use to open ANOTHER project's Local data.
 function __pgliteIdbName() {
   var injected = (typeof __TRIVIAL_DATADIR_KEY !== 'undefined' && __TRIVIAL_DATADIR_KEY) ? __TRIVIAL_DATADIR_KEY : '';
   // The fallback is the pre-rename-fix derivation, kept for hosts that splice the core without a
@@ -78,7 +74,7 @@ function __pgliteIdbName() {
 // found here." in WebKit's older wording, which is what the maker reads). Retrying cannot fix it;
 // only deleting the database can. A boot interrupted between the open and the store's first write
 // — a jetsammed tab on a memory-tight iPad, a killed worker, a dev-server reload, or two PGlites
-// racing the same datadir (the bug fixed below) — leaves exactly that.
+// racing the same datadir — leaves exactly that.
 //
 // So: inspect BEFORE handing the datadir to PGlite, while nothing holds a connection. Once
 // PGlite.create has failed, its own handle blocks deleteDatabase, and repair needs a reload.
@@ -249,7 +245,7 @@ function __pgliteGetDb() {
         return db;
       })();
       // The CEILING, not the caller's patience: only a boot this long is abandoned. Racing the
-      // caller's 15s here (as this used to) was the bug — see below.
+      // caller's 15s here would be wrong — see below.
       var ceiling = new Promise(function (_, rej) { setTimeout(function () { rej(new Error('pglite boot exceeded ' + PGLITE_BOOT_CEILING_MS + 'ms')); }, PGLITE_BOOT_CEILING_MS); });
       var ready = await Promise.race([boot, ceiling]);
       swEvent({ step: 'transform', level: 'success', message: 'pglite: build DB ready' });
@@ -269,7 +265,7 @@ function __pgliteGetDb() {
   }
 
   // the caller's deadline is SEPARATE from the boot, and expiring it must not touch
-  // __pgliteReady. It used to: the 15s race rejected AND nulled the handle while PGlite.create was
+  // __pgliteReady: a 15s race that rejected AND nulled the handle while PGlite.create was
   // still running, so the Data app's 1.5s retry started a SECOND PGlite over the SAME IDBFS
   // datadir. Two mounts racing one database is both a memory multiplier and a very good way to
   // leave that database at v21 with no FILE_DATA store — i.e. the timeout manufactured the

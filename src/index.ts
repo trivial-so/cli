@@ -152,10 +152,10 @@ async function removeLocalPath(folder: string, rel: string): Promise<void> {
 /**
  * A clone that could not complete must not leave a folder behind.
  *
- * Both clone forms write `.trivial/state.json` BEFORE pulling, so a refusal used to leave a
- * half-initialised project directory — with the refusal text claiming "your folder was left
- * exactly as it was", which was then false. An inert folder carrying a projectId and no files is
- * worse than none: `trivial status` reads it as a real project with nothing in it.
+ * Both clone forms write `.trivial/state.json` BEFORE pulling, so a refusal would otherwise leave
+ * a half-initialised project directory while the refusal text claims the folder was untouched. An
+ * inert folder carrying a projectId and no files is worse than none: `trivial status` reads it as a
+ * real project with nothing in it.
  */
 async function abandonClone(dir: string, out: { reason: string; details: string[] }): Promise<never> {
   await fsp.rm(join(dir, '.trivial'), { recursive: true, force: true }).catch(() => { /* best effort */ });
@@ -235,11 +235,10 @@ async function pullRemote(folder: string, state: State, token: string, force: bo
 
   // ── STILL TRUNCATED ── refuse BEFORE touching disk or state.
   //
-  // Reached when the server sliced the feed but sent no `cursor` — an older API, where
-  // `since` is the only parameter and re-asking returns the identical page. Applying the slice and
-  // advancing baseSha (as this function used to, unconditionally) makes the undelivered remainder
-  // permanently unreachable — `git diff head head` is empty forever after. Measured on a 2500-file
-  // repo: 2000 files land, `✓ cloned 2000 files` prints, 500 are lost with no signal.
+  // Reached when the server sliced the feed but sent no `cursor` — an older API where `since` is
+  // the only parameter, so re-asking returns the identical page. Applying the slice and advancing
+  // baseSha would make the undelivered remainder permanently unreachable: `git diff head head` is
+  // empty forever after, and the missing files never arrive.
   //
   // With no cursor the CLI cannot self-heal, so the only honest move is to refuse loudly and name a
   // transport that has no cap.
@@ -272,7 +271,8 @@ async function pullRemote(folder: string, state: State, token: string, force: bo
 
   // ── CONVERGENCE ── a conflict is both sides moving to DIFFERENT content.
   //
-  // This used to test path membership alone, which made the two transports unusable together: after
+  // Path membership alone is not enough, and testing only that makes the two transports unusable
+  // together: after
   // any `git push trivial` the cloud holds exactly what the folder holds, yet `state.files` still
   // describes the pre-push baseline, so every file you just pushed counted as changed on both sides
   // and `pull` refused wholesale. `trivial sync` skips its push half on a conflict, so it wedged
@@ -323,7 +323,7 @@ async function pullRemote(folder: string, state: State, token: string, force: bo
 
   // ── APPLY ── contain per-file failures instead of aborting mid-loop.
   //
-  // A single throw here (EISDIR, EEXIST, a Windows lock) used to abandon the pull AFTER some writes
+  // A single throw here (EISDIR, EEXIST, a Windows lock) would abandon the pull AFTER some writes
   // had landed and BEFORE writeState, leaving the folder mutated and the baseline stale — the worst
   // of both. Collect instead, persist what landed, and refuse to advance baseSha so the next pull
   // re-offers the rest.
@@ -419,8 +419,8 @@ async function pullRemote(folder: string, state: State, token: string, force: bo
   }
 
   // Only advance on a real answer. A server-side git failure (including the 20s timeout) returns
-  // `{head: null, files: []}`, which used to NULL a healthy folder's baseline and silently promote
-  // every following pull to a full re-sync.
+  // `{head: null, files: []}`, and treating that as an answer would NULL a healthy folder's
+  // baseline and silently promote every following pull to a full re-sync.
   if (changes.head) state.baseSha = changes.head;
   await writeState(folder, state);
   return { kind: 'applied', count: changes.files.length, head: changes.head };
@@ -502,7 +502,7 @@ type ProposeOutcome =
 /**
  * Send the local changes as a PROPOSAL instead of writing them.
  *
- * The two ways this deliberately differs from pushLocal:
+ * The two ways this differs from pushLocal:
  *  - a `project:read` token is enough, because proposing is not writing — this is how someone with
  *    review access contributes at all;
  *  - the local baseline is NOT advanced. A proposal hasn't landed on main, so the folder genuinely still
@@ -580,23 +580,12 @@ function parseCloneRef(raw: string): { owner: string; slug: string } | { id: str
 /**
  * A clone that produced nothing is not a success, whatever the exit code says.
  *
- * ── THE ADVICE CHANGED WITH PHASE 2c; THE WARNING DID NOT GO AWAY ────────────────────────────────
- * This used to say a project's history is created by its FIRST PUBLISH — measured, and true at the
- * time: `.git` was absent on create, absent after a build-preview, absent after an editor or Trio
- * write, and present only after a publish.
+ * The condition is real: a project created and never touched has nothing to clone. Any write
+ * becomes a commit shortly after it lands, so the instruction is "make an edit, then pull" rather
+ * than "publish it once".
  *
- * The ledger's flusher makes that false. Any write now becomes a commit within the drift ceiling, so
- * "publish it once" is no longer the instruction — editing is enough, and waiting a moment is the
- * rest of it.
- *
- * The collaboration-layer plan said to DELETE this function once 2c landed. That is a step too far:
- * the CONDITION it detects is still real. A project created and never touched has nothing to clone,
- * and on a deployment with the ledger off the old behaviour is exactly what a maker gets. What was
- * wrong was the explanation, not the warning — so the explanation is what changes.
- *
- * Shared by BOTH clone forms; the token form is the agent/CI path, which used to print a bare
- * "✓ cloned 0 files" — a success-shaped message for a total failure, to the caller least able to
- * notice.
+ * Shared by BOTH clone forms, including the token form — the agent/CI path, whose caller is the
+ * least able to notice a success-shaped message for a total failure.
  */
 function warnIfEmptyClone(count: number, baseSha: string | null): void {
   if (count > 0 || baseSha) return;
@@ -620,8 +609,8 @@ async function dirBlockers(dir: string): Promise<string[]> {
 }
 
 /**
- * `trivial init` — RENAMED. This verb used to create a new project; it now adopts the
- * folder you are standing in, and `trivial create` does what `init` used to do.
+ * `trivial init` — adopt the folder you are standing in. `trivial create` is the verb that
+ * scaffolds a NEW project.
  *
  * The old forms hard-error for one minor version instead of being silently reinterpreted. That is
  * deliberate: reinterpreting `trivial init my-app` under the new meaning would adopt the CURRENT
@@ -657,9 +646,8 @@ async function cmdCreate(args: Args): Promise<void> {
   if (blockers.length) {
     const looksLikeCode = blockers.some((f) => ['package.json', '.git', 'src', 'Cargo.toml', 'go.mod', 'pyproject.toml'].includes(f));
     if (looksLikeCode) {
-      // This refusal used to end the conversation ("we don't import an existing repo"). It now
-      // hands over to the verb that does — which is the whole point of the  split, and
-      // and it retires an old refusal: a folder holding only `.git` was called "a codebase" and turned away,
+      // The refusal hands over to the verb that DOES import an existing codebase, rather than
+      // ending the conversation. A folder holding only `.git` is a repository, not "a codebase",
       // when adopting it is exactly what that person wanted.
       // name what is actually there. A folder holding nothing but `.git` is a repository,
       // not "a codebase", and calling it one is a small false statement at the first thing a
@@ -720,8 +708,8 @@ async function cmdCreate(args: Args): Promise<void> {
   const count = out.kind === 'applied' ? out.count : 0;
 
   console.log(`✓ created ${slug} → ${here ? 'this folder' : dir + '/'}  (${count} files)`);
-  //  is why this can be an assertion rather than a hope: the repo now exists from creation, so
-  // a fresh project clones with its scaffold. A zero here means that regressed.
+  // The repo exists from creation, so a fresh project clones with its scaffold. A zero here means
+  // something upstream is wrong, which is why it is stated rather than hoped for.
   if (count === 0) {
     console.log('⚠ the project scaffolded empty — that is a bug; report it rather than working around it.');
   }
@@ -1138,10 +1126,17 @@ async function cmdLogin(args: Args): Promise<void> {
   let label = 'trivial CLI';
   try { label = `${userInfo().username}@${hostname()}`; } catch { /* keep default */ }
   const start = await startDeviceLogin(apiUrl, label);
+  // The plain URL leads and the code is typed: entering it is what binds the browser to THIS
+  // terminal, and a link that arrives by mail should not look identical to one you generated. The
+  // prefilled form is the device flow's `verification_uri_complete`, kept one line down for anyone
+  // who wants the shortcut. Neither form leaks anything — the printed code is a lookup key, and the
+  // credential that redeems the session is a 256-bit device code this terminal never displays.
   console.log('\n  Open this page to sign in:');
-  console.log(`    ${start.verificationUriComplete}`);
-  console.log(`  and confirm this code:  ${start.userCode}\n`);
-  openBrowser(start.verificationUriComplete);
+  console.log(`    ${start.verificationUri}`);
+  console.log(`\n  and enter this code:  ${start.userCode}`);
+  console.log(`\n  (or open it prefilled — same sign-in, one less step:`);
+  console.log(`     ${start.verificationUriComplete})\n`);
+  openBrowser(start.verificationUri);
   process.stdout.write('  waiting for approval in the browser … ');
 
   const deadline = Date.now() + start.expiresIn * 1000;
