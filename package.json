@@ -1,0 +1,25 @@
+{
+  "name": "@trivial-so/cli",
+  "version": "0.18.0",
+  "type": "module",
+  "description": "The Trivial CLI — clone, run, and publish your Trivial project from your terminal.",
+  "license": "MIT",
+  "homepage": "https://trivial.so",
+  "repository": { "type": "git", "url": "git+https://github.com/trivial-so/cli.git" },
+  "bugs": { "url": "https://github.com/trivial-so/cli/issues" },
+  "keywords": ["trivial", "cli", "vite", "react", "deploy", "publish"],
+  "packageManager": "pnpm@11.1.1",
+  "engines": { "node": ">=18" },
+  "bin": { "trivial": "dist/trivial.cjs" },
+  "files": ["dist"],
+  "scripts": {
+    "build": "node --experimental-strip-types scripts/build.mjs",
+    "test": "pnpm run build && node --test test/cli.test.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.6.0"
+  }
+}
