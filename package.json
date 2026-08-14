@@ -34,9 +34,9 @@
   ],
   "scripts": {
     "build": "node --experimental-strip-types scripts/build.mjs",
-    "build:serve": "pnpm run build && mkdir -p ../ui/public/cli && cp dist/trivial.cjs ../ui/public/cli/trivial.js && node -e \"require('fs').writeFileSync('../ui/public/cli/version.json', JSON.stringify({version:process.env.npm_package_version})+'\\n')\"",
     "test": "npm run build && node --test test/cli.test.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
