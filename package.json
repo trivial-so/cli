@@ -26,7 +26,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "packageManager": "pnpm@11.1.1",
   "bin": {
     "trivial": "dist/trivial.cjs"
   },
@@ -36,7 +35,7 @@
   "scripts": {
     "build": "node --experimental-strip-types scripts/build.mjs",
     "build:serve": "pnpm run build && mkdir -p ../ui/public/cli && cp dist/trivial.cjs ../ui/public/cli/trivial.js && node -e \"require('fs').writeFileSync('../ui/public/cli/version.json', JSON.stringify({version:process.env.npm_package_version})+'\\n')\"",
-    "test": "pnpm run build && node --test test/cli.test.mjs",
+    "test": "npm run build && node --test test/cli.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
