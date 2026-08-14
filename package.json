@@ -1,5 +1,5 @@
 {
-  "name": "@trivial/cli",
+  "name": "@trivial-so/cli",
   "version": "0.18.3",
   "type": "module",
   "description": "The trivial folder-path client \u2014 pull/push your Trivial project from your laptop.",

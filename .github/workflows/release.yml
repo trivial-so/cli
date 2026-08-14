@@ -1,0 +1,47 @@
+name: Release
+
+# Publishing is tag-driven, and the tag must match the manifest — a mismatch is a mistake, not a
+# thing to reconcile silently.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  # Required for npm provenance: the workflow signs an attestation binding the published tarball to
+  # this repository, this workflow and this commit. It is what lets someone verify the package they
+  # install was built from the source they can read, rather than uploaded from a laptop.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Tag must match package.json
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p 'require("./package.json").version')"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "tag v$TAG does not match package.json $PKG" >&2
+            exit 1
+          fi
+
+      # Never publish a red build. `npm test` builds the bundle first, so a broken artifact cannot
+      # reach the registry even if the source typechecks.
+      - run: npx tsc --noEmit -p tsconfig.json
+      - run: npm test
+
+      - name: Publish with provenance
+        run: npm publish --provenance --access public
+        env:
+          # Not needed when the package is configured for npm trusted publishing (OIDC), which is
+          # the preferred setup: no long-lived credential exists to leak. Kept as the fallback.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

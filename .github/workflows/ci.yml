@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # The engine floor and the current Active LTS. A pull request that works on one and not the
+      # other is exactly the failure this matrix exists to catch.
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npx tsc --noEmit -p tsconfig.json
+      # `test` builds first, so this covers the bundle as well as the source. The suite is
+      # black-box: it spawns the built CLI against an in-process mock of the API.
+      - run: npm test
