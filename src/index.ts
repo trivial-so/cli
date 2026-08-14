@@ -703,7 +703,7 @@ async function cmdCreate(args: Args): Promise<void> {
         printCreateNextSteps(here, dir!);
         return;
       }
-      // A zero-file git clone is the same condition wearing a different hat (the repo exists but
+      // A zero-file git clone is the empty-clone condition wearing a different hat (the repo exists but
       // the scaffold has not landed in it yet). Fall through to the feed, which knows how to say so.
       if (!g.ok) console.log(`  ℹ no git history in this folder (${g.reason}) — taking a snapshot instead.`);
     }

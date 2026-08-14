@@ -360,8 +360,8 @@ function __pgliteStripMaker(q) {
   return s;
 }
 function __pgliteAccessFromQual(cmd, qual) {
-  // that phase parity: derive the label from the per-command select policy (USING); the old FOR ALL pair
-  // is gone, and insert/update/delete are command-scoped (cmd !== SELECT) so ignored here. that phase:
+  // Parity: derive the label from the per-command select policy (USING); the old FOR ALL pair
+  // is gone, and insert/update/delete are command-scoped (cmd !== SELECT) so ignored here.
   // mirror index.ts -- managed (role+id), and the post-NULLIF forms (IS NOT NULL = authenticated).
   if (cmd !== 'SELECT') return null;
   var q = __pgliteStripMaker(String(qual || '').toLowerCase().trim());

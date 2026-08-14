@@ -80,7 +80,7 @@ const ROLE = `current_setting('app.user_role', true)`;
 /**
  * Emit ENABLE/FORCE RLS + the PER-COMMAND policies for one table from its access declaration.
  *
- * that phase — the generator moved from a `<t>_read` (FOR SELECT) + `<t>_write` (FOR ALL) pair to FOUR
+ * The generator moved from a `<t>_read` (FOR SELECT) + `<t>_write` (FOR ALL) pair to FOUR
  * command-scoped policies: `<t>_select` (SELECT) · `<t>_insert` (INSERT) · `<t>_update` (UPDATE) ·
  * `<t>_delete` (DELETE). For the existing four access types this is a BEHAVIORAL NO-OP — the effective
  * row-security is byte-identical, because every current type has `write ⇒ read` (you can only write rows
@@ -91,9 +91,9 @@ const ROLE = `current_setting('app.user_role', true)`;
  *
  * The refactor exists to make INTENT expressible that a single FOR ALL qual cannot: anon-INSERT-only
  * (`submission`: insert-anyone but read-owner-only — write⇏read) and owner-OR-admin super-write
- * (`managed`, shipped below). that phase shipped ONLY the structural split.
+ * (`managed`, shipped below). That refactor shipped ONLY the structural split.
  *
- * 🔒 NULLIF anon-safety: `authenticated` and `owner`/`managed` (that phase, this phase)
+ * 🔒 NULLIF anon-safety: `authenticated`, `owner` and `managed`
  * guard the `app.user_id` GUC with `NULLIF(…, '')`, because a custom GUC reverts to '' (NOT NULL) on a warm
  * pooled connection ⇒ a bare comparison would let an anon read/write a shared '' bucket. So those types are
  * deliberately NO LONGER byte-identical to their pre-NULLIF form — the effective-equivalence lock now
@@ -242,7 +242,7 @@ export function generateRls(table: string, p: Access): string {
   lines.push(`CREATE POLICY ${table}_delete ON ${table} FOR DELETE USING (${write} OR ${MAKER});`);
   // Per-field projection MARKERS — carried as column COMMENTs so the DB is the single source
   // of truth (columnsOf reads pg_description in the SAME introspection as the owner default). The closed
-  // enum is all|owner (that phase adds admin); a malformed/unknown rule is denied-by-default AT READ TIME
+  // enum is all|owner|admin; a malformed/unknown rule is denied-by-default AT READ TIME
   // (runtime-api), never here. Emitted LAST + ONLY when `fields` is present ⇒ byte-identical for the four
   // existing types. A field rule on an unsafe/nonexistent column FAILS the publish (loud) rather than
   // silently dropping the rule (which would WIDEN the column to visible) — fail-closed at compile time.

@@ -135,7 +135,7 @@ swEvent({ step: 'install', level: 'dim', message: 'pglite substrate registered' 
 export const PGLITE_SUBSTRATE_SOURCE = PGLITE_CORE_SOURCE + PGLITE_SW_BRIDGE_SOURCE;
 
 /**
- * The /api/data dispatch (the parity harness) — the SW answers the BUILD frame's own SDK
+ * The /api/data dispatch — the SW answers the BUILD frame's own SDK
  * fetches (`db.from(...)` → `fetch('/api/data/<pid>/<table>[/<id>]')`) from the in-SW PGLite,
  * speaking the run gateway's exact wire (controllers/dynamic-data.ts endUser* + mapDataError).
  * A thin HTTP adapter over the SAME ctx verbs the handler tier uses (__devMakeCtx, spliced from
@@ -250,7 +250,7 @@ async function __dataDispatch(request, url, viewAs) {
       var curN = rawCur == null ? NaN : Number(rawCur);
       var cursor = isFinite(curN) ? curN : null;
       var page = await ctx.list(table, { limit: limit, cursor: cursor });
-      // the preview remedy: an EMPTY read on an IDENTITY-SCOPED table under an anonymous identity is empty BY
+      // The preview remedy: an EMPTY read on an IDENTITY-SCOPED table under an anonymous identity is empty BY
       // CONSTRUCTION (RLS hides every row) — the app just looks broken. Teach the remedy. Keyed on
       // the SELECT policy's access (owner/authenticated/role/managed), NOT owner-column presence:
       // a public table can carry an ownerColumn (guestbook: public read + owner-stamped rows) and
@@ -291,7 +291,7 @@ async function __dataDispatch(request, url, viewAs) {
     // No such route on the run side either (e.g. GET/POST with an id, PUT) — the gateway 404s.
     return __dataJson(404, { error: 'Not found' });
   } catch (e5) {
-    // the preview remedy: a policy-refused WRITE under an anonymous identity — the unambiguous "you acted while
+    // The preview remedy: a policy-refused WRITE under an anonymous identity — the unambiguous "you acted while
     // signed out" moment. (42501 = the RLS wall; identity is function-scoped var, assigned before
     // any ctx op can throw it.)
     try {

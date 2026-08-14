@@ -159,7 +159,7 @@ export function validateManifest(json: unknown): ProjectManifest {
     if (SQL_RESERVED.has(name)) throw err(`table name ${JSON.stringify(name)} is a SQL reserved word and cannot be used — rename it (e.g. "order" → "orders", "user" → "users")`);
     tables[name] = validateTable(name, raw);
   }
-  // Empty tables is VALID — the dormant state (that phase design shift, 2026-07-04:
+  // Empty tables is VALID — the dormant state (the 2026-07-04 design shift:
   // the scaffold ships the manifest from birth; declaring data = ADDING a
   // table to it, and dynamic intent keys on CONTENT, not file presence).
   // Provisioning over zero tables is naturally a no-op everywhere.

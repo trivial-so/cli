@@ -8,7 +8,7 @@
  *   - the RUN seam (seed.ts) → `applyRunSchema` provisions `app_<pid>` from the compiled spec.
  *   - the BUILD seam (iframe-shell.getIframeManifest → the SW's PGLite) → boots the same schema.
  * Because both seams compile the identical file through the byte-identical `generateAll`, build↔run
- * parity is free (the same condition, now per-project).
+ * parity is free (that property, now per-project).
  *
  * THE SPLIT (Phase 2). The shared contract + the SECURITY-CRITICAL validator (`validateManifest`,
  * closed vocabs, `safeIdent`, `ManifestError`, the types) live in the dependency-free, browser-safe
@@ -195,7 +195,7 @@ export async function resolveBuildSchema(sourceDir: string): Promise<BuildDataSc
  *  `PackContext.isDynamicProject` must not flip back to static semantics on a typo). Cheap
  *  (one fs.access), never throws. */
 export async function projectHasManifest(sourceDir: string): Promise<boolean> {
-  // Content-aware since the that phase design shift (2026-07-04): the scaffold
+  // Content-aware since the 2026-07-04 design shift: the scaffold
   // ships a DORMANT manifest ({tables:{}}) from birth, so presence no
   // longer means intent — DECLARED TABLES do. Non-throwing: a malformed
   // manifest still reads as dynamic intent (someone is mid-edit).

@@ -23,7 +23,7 @@
  * SW is byte-identical); ZERO server compute (it runs in the browser SW); model-free.
  *
  * FIDELITY NOTE for the lead: row-level RLS is byte-faithful (same policies + role wall + GUCs, native to
- * PGLite). The that phase per-FIELD (column) READ projection is now MIRRORED here too (that phase follow-up): the dev
+ * PGLite). The per-FIELD (column) READ projection is now MIRRORED here too: the dev
  * ctx reads each table's `trivial:field:` column COMMENTs and masks owner-only / role-gated columns for a
  * non-permitted reader using the SAME decision as the run side — `__devProjectRowShape` is a byte-faithful
  * port of `field-projection.ts` projectRowShape, PARITY-PINNED to it by an exhaustive test over the closed
@@ -41,12 +41,12 @@ import { fileURLToPath } from 'node:url';
 /**
  * The DATA CORE — the PGLite ctx machinery (idents, field projection, introspection, the RLS
  * connection discipline, and the four structured verbs). Split out of the handler runtime
- * (the parity harness) so it splices under DYNAMIC_APPS_ENABLED (`opts.pglite`) — BOTH the
- * /api/data dispatch (pglite-substrate.ts DATA_API_DISPATCH_SOURCE) and the that phase handler tier
+ * It splices under DYNAMIC_APPS_ENABLED (`opts.pglite`) — BOTH the
+ * /api/data dispatch (pglite-substrate.ts DATA_API_DISPATCH_SOURCE) and the handler tier
  * (below; handlers ⊂ pglite) run on these same bytes, so verb semantics can never fork.
  * Authored as a string (the SW splices it): `String.raw`, no `${`, no nested backticks (SQL
  * placeholders by concatenation, `'$' + (i + 1)`), so a function-form `.replace()` can't mangle
- * it. Operates on an already-booted PGLite handle (`db`) — the same condition boots the
+ * it. Operates on an already-booted PGLite handle (`db`) — the substrate boots the
  * schema/RLS/grants; this never imports PGLite or any schema.
  */
 export const DEV_DATA_CORE_SOURCE = String.raw`
@@ -55,7 +55,7 @@ var __DEV_MAX_LIMIT = 200;
 function __devSafeIdent(name) { return /^[a-z_][a-z0-9_]{0,62}$/i.test(String(name == null ? '' : name)); }
 function __devCoerceId(id) { return (typeof id === 'number') ? id : (/^\d+$/.test(String(id)) ? Number(id) : id); }
 
-// ── that phase per-FIELD READ projection (that phase follow-up) — the BYTE-FAITHFUL dev mirror of field-projection.ts.
+// ── per-FIELD READ projection — the BYTE-FAITHFUL dev mirror of field-projection.ts.
 // Parity-pinned to the run side by an exhaustive test (dev-handler-runtime.test.ts) over the closed rule ×
 // identity space: the dev ctx masks the SAME owner-only / role-gated columns a non-permitted reader sees
 // masked in prod. projectRowShape decides by RULE + caller ctx (NOT value-nullness), so feeding it the raw
@@ -157,7 +157,7 @@ function __devProjectRowShape(row, meta, userId, role) {
 
 // Privileged introspection on the BASE handle (mirror of runtime-api.columnsOf, public schema): the table's
 // columns, the GUC-stamped owner column(s) (whose DEFAULT references app.user_id), whether it has an id PK
-// (keyset pagination), AND the per-field projection rules read from each column's COMMENT (the that phase markers
+// (keyset pagination), AND the per-field projection rules read from each column's COMMENT (the markers
 // the rls-generator compiles into the DB — same source-of-truth as runtime-api). Read outside __devAsUser so
 // it never trips the app_user role's grants.
 async function __devColumnsOf(db, table) {
@@ -222,7 +222,7 @@ function __devMakeCtx(db, identity) {
         var rawPage = res.rows.slice(0, lim);
         var last = rawPage[rawPage.length - 1];
         var nextCursor = (res.rows.length > lim && last && typeof last.id === 'number') ? last.id : null;
-        // that phase per-field READ projection — mask owner-only / role-gated columns per row for a non-permitted
+        // Per-field READ projection — mask owner-only / role-gated columns per row for a non-permitted
         // reader (the SAME masking the run side applies). id is read=all so it survives → nextCursor (from
         // the raw page above) is unaffected. Unruled tables (fields empty) pass through byte-identically.
         var rows = rawPage.map(function (r) { return __devProjectRowShape(r, meta, userId, role); });
@@ -251,7 +251,7 @@ function __devMakeCtx(db, identity) {
           throw new Error('unknown fields: ' + suppliedKeys.slice(0, 8).join(', ') + ' — no declared column matched; check the form\'s field names against the data model');
         }
       }
-      // that phase/that phase write-gate (run parity, the parity harness): REJECT a withheld write — never
+      // The write-gate (run parity): REJECT a withheld write — never
       // silently strip. A SIGNED-IN inserter owns the new row (owner DEFAULTs to their GUC) ⇒ isRowOwner
       // = true; an ANON insert stamps owner=NULL ⇒ isRowOwner = false, blocking owner-write fields (
       // run parity — no anon-set maker-only fields); admin-write needs the granted role; RLS backstop.
@@ -303,7 +303,7 @@ function __devMakeCtx(db, identity) {
       var entries = Object.entries(values || {}).filter(function (e) { return __devSafeIdent(e[0]) && meta.all.indexOf(e[0]) >= 0 && !strip[e[0]]; });
       if (!entries.length) throw new Error('no updatable fields');
       __devAssertValueSizes(entries); //  P0b (run parity)
-      // that phase/that phase write-gate (run parity, the parity harness) — needs the TARGET row's owner
+      // The write-gate (run parity) — needs the TARGET row's owner
       // (unlike insert): pre-read it RLS-scoped inside the SAME txn when any entry is non-'all'.
       // Not visible (RLS-hidden or missing) ⇒ null → 404, never revealing existence; visible but
       // withheld ⇒ throws (the 403 wire), loud, never a strip. Mirrors runtime-api.update.
@@ -357,12 +357,12 @@ export const DEV_HANDLER_RUNTIME_SOURCE = String.raw`
 // (const app = buildApp(ctx); return app.fetch(req)), but ctx is PGLite-backed. So a byte-identical
 // handlers/<route>.ts runs here unchanged. An uncaught handler error becomes a 500 (surfaced in the preview)
 // rather than a rejected fetch the SW can't answer.
-// an observation: the handler-log redaction seam. Design-ahead — NO secrets reach a dev
+// The handler-log redaction seam. Design-ahead — NO secrets reach a dev
 // handler today (isolate bindings are PROJECT_ID + GATEWAY_URL only), so this is
 // identity for now; when a per-project secret store lands, scrub known secret
 // values HERE, before any line leaves the SW.
 function __redactHandlerLog(s) { return s; }
-// an observation: ship this request's captured handler console to the shell, which
+// Ship this request's captured handler console to the shell, which
 // relays it to the SPA as a kind:'handler' runtime signal (ring + prompt + the
 // inspect_handler_logs tool). SW→client postMessage; the shell keys it by conv.
 function __emitHandlerLogs(route, status, entries) {
@@ -376,7 +376,7 @@ function __emitHandlerLogs(route, status, entries) {
 async function __devRunHandler(o) {
   var ctx = __devMakeCtx(o.db, o.identity || {});
   var app = o.buildApp(ctx);
-  // an observation: capture THIS request's handler console (the server-side blind spot).
+  // Capture THIS request's handler console (the server-side blind spot).
   var __logs = [];
   var __orig = { log: console.log, warn: console.warn, error: console.error, info: console.info };
   var __mk = function (level) { return function () {
@@ -435,7 +435,7 @@ function loadCuratedDepsMap(): Record<string, string> {
 const CURATED_DEPS_MAP = loadCuratedDepsMap();
 
 /**
- * The curated-deps RESOLVER (that phase follow-up — the deps→SW bridge). Spliced into the SW between the runtime
+ * The curated-deps RESOLVER (the deps→SW bridge). Spliced into the SW between the runtime
  * and the dispatch. `__DEV_CURATED_DEPS` is the baked map (a plain JSON object literal — no `${`/backticks, so
  * the function-form splice can't mangle it); `__devResolveCuratedImports` rewrites a handler's BARE curated
  * import specifiers (`'hono'`, …) to the pre-bundled worker-ESM asset URLs, AST-level, the SAME
@@ -497,7 +497,7 @@ function __devResolveCuratedImports(ast) {
  * present because `handlers` is nested under `pglite` (the server flag `DYNAMIC_HANDLERS_ENABLED` requires
  * `DYNAMIC_APPS_ENABLED`).
  *
- * DEPS→SW BRIDGE (that phase follow-up — DONE): a handler that imports a BARE curated dep (`import { Hono } from
+ * DEPS→SW BRIDGE: a handler that imports a BARE curated dep (`import { Hono } from
  * 'hono'`) now RUNS here — `__devResolveCuratedImports` (above) rewrites the bare curated specifiers to the
  * pre-bundled worker-ESM asset URLs (`/api/iframe-runtime/curated-deps/<dep>.js`) before the blob-import, so
  * the SW (which has no import map) resolves them. Curated-ONLY: a non-allowlisted dep has no mapping → left
@@ -877,15 +877,15 @@ export interface DevRuntime {
   __devAsUser<T>(db: any, userId: string | null, role: string | null, fn: (tx: any) => Promise<T>): Promise<T>;
   __devMakeCtx(db: any, identity: DevIdentity): DevCtx;
   __devRunHandler(o: { db: any; buildApp: (ctx: DevCtx) => HandlerApp; request: unknown; identity?: DevIdentity }): Promise<unknown>;
-  // that phase per-field READ projection mirror (parity-pinned to field-projection.ts) — exposed for the test.
+  // Per-field READ projection mirror (parity-pinned to field-projection.ts) — exposed for the test.
   __devParseFieldRule(comment: string | null | undefined): DevFieldRule | null;
   __devOwnerColOf(meta: { owner: string[] }): string | null;
   __devIsColumnReadable(rule: DevFieldRule | null | undefined, ctx: { isRowOwner: boolean; isAdmin: boolean }): boolean;
-  // that phase/that phase write-gate mirror (the parity harness; parity-pinned to field-projection.ts).
+  // Write-gate mirror ( parity-pinned to field-projection.ts).
   __devIsColumnWritable(rule: DevFieldRule | null | undefined, ctx: { isRowOwner: boolean; isAdmin: boolean }): boolean;
   __devRejectWithheldWrites(entries: Array<[string, unknown]>, meta: DevColMeta, ctx: { isRowOwner: boolean; isAdmin: boolean }): void;
   __devProjectRowShape(row: Record<string, unknown>, meta: DevColMeta, userId: string | null, role: string | null): Record<string, unknown>;
-  // that phase deps→SW bridge — the curated-import resolver + the baked map, exposed for the resolver test.
+  // Deps→SW bridge — the curated-import resolver + the baked map, exposed for the resolver test.
   __devResolveCuratedImports(ast: unknown): void;
   __DEV_CURATED_DEPS: Record<string, string>;
   /* eslint-enable @typescript-eslint/no-explicit-any */
