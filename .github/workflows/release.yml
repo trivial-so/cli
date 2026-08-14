@@ -39,9 +39,10 @@ jobs:
       - run: npx tsc --noEmit -p tsconfig.json
       - run: npm test
 
+      # Authentication is OIDC, via the trusted publisher configured on the package: GitHub Actions
+      # mints a short-lived token for this workflow in this repository, and npm verifies it. There
+      # is deliberately no NODE_AUTH_TOKEN — a stored credential would take precedence over OIDC and
+      # is one more thing that can leak. If this step ever fails to authenticate, the fix is the
+      # trusted-publisher configuration, never a token.
       - name: Publish with provenance
         run: npm publish --provenance --access public
-        env:
-          # Not needed when the package is configured for npm trusted publishing (OIDC), which is
-          # the preferred setup: no long-lived credential exists to leak. Kept as the fallback.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
