@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import { hostname, userInfo } from 'node:os';
 import { promises as fsp } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, sep } from 'node:path';
 import {
   getChanges, pushWriteSet, createProposal, HttpError,
   startDeviceLogin, pollDeviceLogin, whoami, serverLogout, listProjects, resolveProject,
@@ -1190,6 +1190,12 @@ function promptYesNo(question: string): Promise<boolean> {
  *  - project folders (and their .trivial/ sync state) are user work — never touched.
  */
 async function cmdUninstall(args: Args): Promise<void> {
+  if (installedViaNpm()) {
+    // The credential is still ours to clean up; the binary is npm's.
+    die('this copy was installed by npm, which owns its removal:\n'
+      + '  trivial logout            # revoke this machine\'s login first\n'
+      + '  npm uninstall -g @trivial-so/cli');
+  }
   const { promises: fsp } = await import('node:fs');
   const self = await fsp.realpath(process.argv[1]).catch(() => process.argv[1]);
   const creds = await listCredentials();
@@ -1260,7 +1266,28 @@ function cmpVersion(a: string, b: string): number {
   return 0;
 }
 
+/**
+ * Was this CLI installed by npm, rather than by the standalone installer?
+ *
+ * The two channels own updates differently, and guessing wrong is destructive: the standalone
+ * install is a single file this process may overwrite in place, while an npm install lives inside a
+ * package directory npm manages — writing to it would leave npm's metadata describing a version
+ * that is no longer there, and the next `npm update` would undo the change.
+ *
+ * The tell is the path: npm places the package under `node_modules/@trivial-so/cli`, wherever its
+ * global prefix happens to be.
+ */
+function installedViaNpm(): boolean {
+  const self = process.argv[1] ?? '';
+  return self.includes(`node_modules${sep}@trivial-so${sep}cli`) || self.includes('node_modules/@trivial-so/cli');
+}
+
 async function cmdUpdate(args: Args): Promise<void> {
+  if (installedViaNpm()) {
+    die('this copy was installed by npm, which owns its updates:\n'
+      + '  npm update -g @trivial-so/cli\n'
+      + `  (installed ${VERSION}; npm resolves the latest release)`);
+  }
   const manifestRes = await fetch(`${DIST_BASE}/version.json`);
   if (!manifestRes.ok) die(`could not check for updates (HTTP ${manifestRes.status} from ${DIST_BASE}/version.json)`);
   const latest = ((await manifestRes.json()) as { version?: string }).version;
@@ -1627,6 +1654,10 @@ const HELP = `trivial ${VERSION} — the terminal loop: clone, run, ship
   trivial update [--force]             update to the latest release
   trivial uninstall [--yes]            sign out + remove credentials and the CLI itself
   trivial version                      print the installed version
+
+  install / update:
+  npm i -g @trivial-so/cli             # or: npx @trivial-so/cli <command>
+  npm update -g @trivial-so/cli        # standalone installs: trivial update
 
   git remote (so no token ever goes in a URL):
   git config --global credential.https://git.trivial.so.helper '!trivial git-credential'
