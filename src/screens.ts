@@ -26,8 +26,6 @@ const TERSE = COLS < 60;
 const bold = (s: string): string => (COLOUR ? `\x1b[1m${s}\x1b[0m` : s);
 const dim = (s: string): string => (COLOUR ? `\x1b[2m${s}\x1b[0m` : s);
 
-const MARK_WIDTH = 44;
-
 export interface Row { cmd: string; desc: string }
 
 /** Command column + dim description, aligned to a caller-chosen pad so blocks line up together. */
@@ -57,19 +55,6 @@ export interface Situation {
   local?: { writes: number; deletes: number } | null;
 }
 
-/**
- * The one-time splash. A letterspaced wordmark and a rule — enough to mark the moment, quiet
- * enough that nobody has to look at it twice. Shown on the first run and nowhere else.
- */
-function wordmark(version: string): string[] {
-  const left = 't r i v i a l';
-  const gap = Math.max(1, MARK_WIDTH - left.length - version.length);
-  return [
-    `  ${bold(left)}${' '.repeat(gap)}${dim(version)}`,
-    `  ${dim('-'.repeat(MARK_WIDTH))}`,
-  ];
-}
-
 function header(s: Situation, who?: string): string {
   const subject = who ?? s.project ?? (s.signedIn && s.username ? `signed in as ${s.username}` : null);
   return `  ${bold(`trivial ${s.version}`)}${subject ? dim(` — ${subject}`) : ''}`;
@@ -89,7 +74,10 @@ export function situationScreen(s: Situation): string {
   if (!s.signedIn) {
     // Nothing works before a credential, so the screen says one thing regardless of where it runs.
     if (s.firstRun) {
-      lines.push(...wordmark(s.version), '');
+      // No wordmark. The product is called `trivial`, and any typographic treatment that respaces
+      // or redraws the name makes the first thing a stranger sees a version of it that is not it.
+      // The tagline is what this screen has to say; the name is just the name.
+      lines.push(header(s), '');
       lines.push(`  ${dim('the terminal loop:')}  clone -> run -> ship`, '');
     } else {
       lines.push(header(s), '');
