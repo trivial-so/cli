@@ -2,7 +2,7 @@
   "name": "@trivial-so/cli",
   "version": "0.20.0",
   "type": "module",
-  "description": "The trivial folder-path client \u2014 pull/push your Trivial project from your laptop.",
+  "description": "The terminal client for Trivial \u2014 your projects, on your machine.",
   "license": "MIT",
   "homepage": "https://trivial.so",
   "repository": {

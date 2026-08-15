@@ -1671,7 +1671,7 @@ test('bare `trivial` on a fresh machine greets, and asks for exactly one thing',
   const r = await run([], { home, cwd: work });
   assert.equal(r.code, 0, 'a bare invocation is not an error');
   assert.match(r.out, /^\s*trivial \d+\.\d+\.\d+$/m, 'the name is printed as the name');
-  assert.match(r.out, /clone -> run -> ship/, 'the first run gets the tagline');
+  assert.match(r.out, /Your Trivial projects, on your machine/, 'the first run says what this is');
   assert.match(r.out, /next:\n\s+trivial login/, 'and exactly one next step');
   assert.match(r.out, /npm audit signatures/, 'the provenance line belongs to the first run');
   // The failure this screen replaced: 45 lines of reference, with `login` scrolled off the top.
@@ -1688,7 +1688,7 @@ test('bare `trivial` on a known machine that is signed out drops the ceremony', 
   assert.equal(r.code, 0);
   assert.match(r.out, /isn't signed in/);
   assert.match(r.out, /trivial login/);
-  assert.doesNotMatch(r.out, /clone -> run -> ship/, 'the tagline is a first-run thing only');
+  assert.doesNotMatch(r.out, /Your Trivial projects, on your machine/, 'the tagline is a first-run thing only');
   assert.doesNotMatch(r.out, /npm audit signatures/);
   rmSync(base, { recursive: true, force: true });
 });

@@ -78,7 +78,10 @@ export function situationScreen(s: Situation): string {
       // or redraws the name makes the first thing a stranger sees a version of it that is not it.
       // The tagline is what this screen has to say; the name is just the name.
       lines.push(header(s), '');
-      lines.push(`  ${dim('the terminal loop:')}  clone -> run -> ship`, '');
+      // Says what the CLI ADDS, which is the only question a terminal client for a browser-based
+      // product raises — and it is true for someone who has no projects yet, which "clone -> run ->
+      // ship" was not: the first verb in that line is the one a new reader cannot run.
+      lines.push('  Your Trivial projects, on your machine.', '');
     } else {
       lines.push(header(s), '');
       lines.push("  This machine isn't signed in.", '');
@@ -288,7 +291,9 @@ export function helpText(version: string, topic?: string): string {
     ].join('\n');
   }
 
-  const lines: string[] = [`  ${bold(`trivial ${version}`)} ${dim('— the terminal loop: clone, run, ship')}`];
+  // A different audience from the first-run screen: someone here is already using it and wants the
+  // map, which the group headings below give them. The subtitle only has to be an identity.
+  const lines: string[] = [`  ${bold(`trivial ${version}`)} ${dim('— the terminal client for Trivial')}`];
   // ONE description column for the whole table. Padding per group is easier and reads worse: the
   // column steps left and right down the page and the eye has to find it again at every heading.
   const pad = padFor(GROUPS.flatMap((g) => g.items));
