@@ -11,9 +11,14 @@ cd field-notes && pnpm install
 trivial dev
 ```
 
-Needs Node 22 or newer. `npx @trivial-so/cli <command>` works without installing, and every release
-is published from CI with a provenance attestation — `npm audit signatures` verifies that what you
-installed was built from this repository.
+Needs Node 22 or newer. Every release is published from CI with a provenance attestation —
+`npm audit signatures` verifies that what you installed was built from this repository. If
+`npm i -g` asks for sudo, that is npm's global prefix: `npm config set prefix ~/.local` (with
+`~/.local/bin` on your PATH) and no install on that machine needs root again.
+
+`npx @trivial-so/cli <command>` runs one command without installing, which is a good way to try it
+and a bad way to keep it. Nothing lands on your PATH, so a folder you cloned has no `trivial` for
+git's credential helper to call, and every run fetches the package again.
 
 If you would rather not have a global npm package, the standalone installer puts the same single
 file on your PATH and updates itself with `trivial update`:

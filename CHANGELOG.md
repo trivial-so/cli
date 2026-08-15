@@ -4,6 +4,24 @@ User-facing changes to the `trivial` CLI. Any change in behaviour bumps the vers
 entry here: the version is baked into the bundle at build time (`trivial --version`), so this file
 is how a reported version maps back to what it does.
 
+## 0.20.1 — 2026-08-15
+
+- **`trivial init` could not adopt a folder unless `trivial` was on your PATH.** Adoption pushes
+  with the credential helper it has just configured, and it configured only the PATH form — so
+  running it through `npx` produced `trivial: not found`, a 401, and a half-adopted project:
+  created on the server, remote wired, nothing in it. It now passes both helper forms to its own
+  push, the way `clone` already did.
+- **Nothing writes an npx cache path into your repository any more.** `npx` unpacks into
+  `~/.npm/_npx/<hash>/…`, a directory keyed to one resolution and collected like any cache. `clone`
+  persisted that absolute path into `.git/config` as a helper, so a folder authenticated fine until
+  the cache was pruned and then failed with a 401 — which reads as losing access to the project
+  rather than as the CLI having moved. Only the durable PATH form is written down now, and
+  `clone`/`create`/`init` say plainly that npx leaves nothing on your PATH.
+- `trivial update` and `trivial uninstall` no longer tell an npx user to run `npm update -g` on a
+  package they never installed. There is nothing to update; the credential is still worth revoking,
+  so they name `trivial logout`.
+- `trivial help install` leads with installing, and says what npx is for.
+
 ## 0.20.0 — 2026-08-15
 
 - **`trivial` with no command is now a situation, not a manual.** It reads the folder you are

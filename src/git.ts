@@ -65,6 +65,20 @@ export function selfCredentialHelper(): string | null {
 }
 
 /**
+ * Is this process running from a THROWAWAY location rather than an install?
+ *
+ * `npx` unpacks the package into `~/.npm/_npx/<hash>/…` — a directory keyed to one resolution and
+ * garbage-collected like any cache. That is fine for running a command and fatal for writing one
+ * down: `selfCredentialHelper()` returns an absolute path, and `clone` persists it into the folder's
+ * `.git/config` so the maker's own `git push` authenticates later. Later is exactly when that path
+ * is gone, and git reports `trivial: not found` → 401, which reads as "you lost access to this
+ * project" rather than "your CLI moved".
+ */
+export function isEphemeralInstall(): boolean {
+  return /[\\/]_npx[\\/]/.test(process.argv[1] ?? '');
+}
+
+/**
  * Clone a project's git remote into `dir`, wiring the credential helper for this invocation AND for
  * the folder afterwards, so the maker's own `git pull` / `git push` work there without the one-time
  * global config step the docs describe.
@@ -90,10 +104,13 @@ export async function cloneRepo(
     'clone', '--origin', 'trivial', '--quiet', url, dir,
   ], { timeoutMs: opts.timeoutMs ?? 600_000 });
   if (r.code !== 0) return r;
-  // Persist both, so the maker's own `git pull` / `git push` in this folder authenticate too. The
-  // PATH form is what survives a node upgrade or a CLI reinstall; the absolute one is the backstop
-  // until PATH is fixed. Best-effort — a clone that worked is still a clone if this does not.
-  for (const h of helpers) await git(dir, ['config', '--add', scoped, h]);
+  // Persist so the maker's own `git pull` / `git push` in this folder authenticate too. The PATH
+  // form is what survives a node upgrade or a CLI reinstall; the absolute one is the backstop until
+  // PATH is fixed — unless it points into an npx cache, in which case writing it down is worse than
+  // not, because it will resolve until the day it doesn't. Best-effort either way: a clone that
+  // worked is still a clone if this does not.
+  const persistable = isEphemeralInstall() ? [CREDENTIAL_HELPER] : helpers;
+  for (const h of persistable) await git(dir, ['config', '--add', scoped, h]);
   return r;
 }
 

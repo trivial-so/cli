@@ -1788,3 +1788,65 @@ test('a folder cloned with git is recognised as one, not called "not a project"'
   assert.equal(mock.requests.length, 0);
   rmSync(base, { recursive: true, force: true });
 });
+
+// ── npx is not an install ───────────────────────────────────────────────────
+// npx unpacks into ~/.npm/_npx/<hash>/…, a directory keyed to one resolution and collected like
+// any cache. Running from there is fine; writing an absolute path from there into a folder the
+// maker keeps is not — it resolves until the day it doesn't.
+
+/** The CLI, placed where npx would have put it, so the guard sees the shape it reads. */
+function npxCopyOf(base) {
+  const bin = join(base, '_npx', 'ab12cd34', 'node_modules', '@trivial-so', 'cli', 'dist', 'trivial.cjs');
+  mkdirSync(dirname(bin), { recursive: true });
+  writeFileSync(bin, readFileSync(CLI));
+  return bin;
+}
+
+test('a clone made through npx never persists a path inside the npx cache', async () => {
+  const { home, work, base } = freshDirs();
+  writeCreds(home, { [API]: 'trv_broad' });
+  mockResolveAndChanges();
+  serverRepo(base, 'alice', 'shop', { 'index.html': '<h1>shop</h1>' });
+
+  const r = await run(['clone', 'alice/shop', '--api', API, '--git-url', serverGitUrl(base)],
+    { home, cwd: work, bin: npxCopyOf(base) });
+  assert.equal(r.code, 0, r.out);
+
+  const cfg = readFileSync(join(work, 'shop', '.git', 'config'), 'utf8');
+  assert.match(cfg, /helper = !trivial git-credential/, 'the durable PATH form is still written');
+  assert.doesNotMatch(cfg, /_npx/, 'a path into the npx cache must never be written down');
+  // Better a sentence now than a 401 weeks from now that reads as lost access.
+  assert.match(r.out, /ran through npx/, 'and the maker is told before they rely on it');
+  rmSync(base, { recursive: true, force: true });
+});
+
+test('a normal install still persists both helper forms', async () => {
+  const { home, work, base } = freshDirs();
+  writeCreds(home, { [API]: 'trv_broad' });
+  mockResolveAndChanges();
+  serverRepo(base, 'alice', 'shop', { 'index.html': '<h1>shop</h1>' });
+
+  const r = await run(['clone', 'alice/shop', '--api', API, '--git-url', serverGitUrl(base)], { home, cwd: work });
+  assert.equal(r.code, 0, r.out);
+  const cfg = readFileSync(join(work, 'shop', '.git', 'config'), 'utf8');
+  assert.match(cfg, new RegExp(`helper = !'[^']*node[^']*' '[^']*' git-credential`), 'the backstop survives');
+  assert.doesNotMatch(r.out, /ran through npx/);
+  rmSync(base, { recursive: true, force: true });
+});
+
+test('update and uninstall say what npx actually is', async () => {
+  const { home, work, base } = freshDirs();
+  const bin = npxCopyOf(base);
+
+  const up = await run(['update'], { home, cwd: work, bin });
+  assert.equal(up.code, 1);
+  assert.match(up.out, /nothing to update/, 'there is no installed copy to update');
+  assert.match(up.out, /npm i -g @trivial-so\/cli/, 'and it names the command that installs one');
+
+  const un = await run(['uninstall', '--yes'], { home, cwd: work, bin });
+  assert.equal(un.code, 1);
+  assert.match(un.out, /no installed copy to remove/);
+  // The binary is npx's problem; the credential is ours, and it may still exist.
+  assert.match(un.out, /trivial logout/);
+  rmSync(base, { recursive: true, force: true });
+});

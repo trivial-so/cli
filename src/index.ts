@@ -21,6 +21,7 @@ import { hashTree, diffLocal, writeLocalFile, deleteLocalFile, readLocalBytes, d
 import {
   git, gitAvailable, isRepo, repoRoot, headSha, isDirty, trackedFiles,
   packedSizeKb, remoteUrl, remoteHeadBranch, modifiedAgainstHead, cloneRepo,
+  CREDENTIAL_HELPER, selfCredentialHelper, isEphemeralInstall,
 } from './git.js';
 import { diffLines, countChanges, renderDiff } from './diff.js';
 import { situationScreen, helpText, suggest } from './screens.js';
@@ -695,6 +696,7 @@ async function cmdCreate(args: Args): Promise<void> {
       if (g.ok && g.count > 0) {
         console.log(`✓ created ${slug} → ${here ? 'this folder' : dir + '/'}  (${g.count} files, with history)`);
         console.log(`  git remote "trivial" → ${g.url}`);
+        warnIfEphemeral();
         printCreateNextSteps(here, dir!);
         return;
       }
@@ -832,8 +834,17 @@ async function cmdInit(args: Args): Promise<void> {
   const url = `${gitBase}/${owner}/${finalSlug}`;
 
   // The credential helper, scoped to THIS repo: the token never lands in .git/config, in
-  // `git remote -v`, in shell history, or in a screenshot (the reason  built the helper).
-  await git(cwd, ['config', `credential.${gitBase}.helper`, '!trivial git-credential']);
+  // `git remote -v`, in shell history, or in a screenshot — which is why the helper exists.
+  //
+  // BOTH forms for the push below, only the durable one written down. Adoption pushes with the
+  // helper it just configured, so a maker whose PATH has no `trivial` — anyone running this through
+  // npx — got `trivial: not found`, a 401, and a half-adopted project: created on the server, wired
+  // locally, nothing in it. `clone` had covered this for a while; `init` never did.
+  const helpers = [CREDENTIAL_HELPER, selfCredentialHelper()].filter((h): h is string => Boolean(h));
+  const scopedHelper = `credential.${gitBase}.helper`;
+  for (const h of (isEphemeralInstall() ? [CREDENTIAL_HELPER] : helpers)) {
+    await git(cwd, ['config', '--add', scopedHelper, h]);
+  }
   const added = await git(cwd, ['remote', 'add', 'trivial', url]);
   if (added.code !== 0) die(`could not add the git remote: ${added.out}`);
 
@@ -847,7 +858,10 @@ async function cmdInit(args: Args): Promise<void> {
   // and the only thing on that branch is the one-file `.gitignore` baseline `ensureRepo` wrote. The
   // developer's history is unrelated to it, so a fast-forward is impossible by construction.
   console.log(`\npushing ${tracked.length} file(s) → ${owner}/${finalSlug} (${branch})…`);
-  const pushed = await git(cwd, ['push', '--force', 'trivial', `HEAD:${branch}`], { timeoutMs: 600_000 });
+  const pushed = await git(cwd, [
+    ...helpers.flatMap((h) => ['-c', `${scopedHelper}=${h}`]),
+    'push', '--force', 'trivial', `HEAD:${branch}`,
+  ], { timeoutMs: 600_000 });
   if (pushed.code !== 0) {
     die(`the push failed, but the project "${finalSlug}" exists and the remote is wired.\n`
       + `${pushed.out.split('\n').map((l) => '    ' + l).join('\n')}\n`
@@ -879,6 +893,7 @@ async function cmdInit(args: Args): Promise<void> {
   });
 
   console.log(`✓ adopted → ${owner}/${finalSlug}`);
+  warnIfEphemeral();
   console.log('\nnext:');
   console.log('  trivial build          # run your build the way Trivial will');
   console.log('  trivial publish        # put it on the internet');
@@ -1049,6 +1064,7 @@ async function cmdClone(args: Args): Promise<void> {
       console.log(`✓ cloned ${proj.owner}/${proj.slug} → ${dir}/  (${g.count} files @ ${short(g.baseSha)}, with history)`);
       console.log(`  git remote "trivial" → ${g.url}  —  \`git pull\` / \`git push\` work here.`);
       warnIfEmptyClone(g.count, g.baseSha);
+      warnIfEphemeral();
       await printCloneNextSteps(dir);
       return;
     }
@@ -1064,6 +1080,19 @@ async function cmdClone(args: Args): Promise<void> {
   console.log(`✓ cloned ${proj.owner ?? '?'}/${proj.slug} → ${dir}/  (${count} files @ ${short(state.baseSha)})`);
   warnIfEmptyClone(count, state.baseSha);
   await printCloneNextSteps(dir);
+}
+
+/**
+ * Say it once, where a git remote has just been wired into a folder the maker keeps.
+ *
+ * npx is a fine way to try a command and a bad way to own a repo: nothing it runs is on PATH, so
+ * every later `git push trivial` in this folder has no helper to call. Better to say so now than to
+ * let them find out from a 401 weeks later.
+ */
+function warnIfEphemeral(): void {
+  if (!isEphemeralInstall()) return;
+  console.log('  ℹ this ran through npx, so `trivial` is not on your PATH and `git push trivial`');
+  console.log('    here will not authenticate. Install it once:  npm i -g @trivial-so/cli');
 }
 
 /**
@@ -1214,6 +1243,12 @@ function promptYesNo(question: string): Promise<boolean> {
  *  - project folders (and their .trivial/ sync state) are user work — never touched.
  */
 async function cmdUninstall(args: Args): Promise<void> {
+  if (isEphemeralInstall()) {
+    // Nothing was installed, but a login may still have been minted through it — and that is the
+    // half that matters, so name the command that revokes it rather than refusing outright.
+    die('this ran through npx — there is no installed copy to remove.\n'
+      + "  To revoke this machine's login:  trivial logout");
+  }
   if (installedViaNpm()) {
     // The credential is still ours to clean up; the binary is npm's.
     die('this copy was installed by npm, which owns its removal:\n'
@@ -1307,6 +1342,13 @@ function installedViaNpm(): boolean {
 }
 
 async function cmdUpdate(args: Args): Promise<void> {
+  // npx satisfies installedViaNpm() — its cache holds a real node_modules — but there is nothing
+  // installed to update, and telling someone to run `npm update -g` on a package they never
+  // installed globally is advice that silently does nothing.
+  if (isEphemeralInstall()) {
+    die('this ran through npx, which fetches a fresh copy every time — there is nothing to update.\n'
+      + '  To install it once:  npm i -g @trivial-so/cli');
+  }
   if (installedViaNpm()) {
     die('this copy was installed by npm, which owns its updates:\n'
       + '  npm update -g @trivial-so/cli\n'
