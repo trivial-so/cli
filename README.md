@@ -1,7 +1,7 @@
 # Trivial CLI
 
 The terminal client for [Trivial](https://trivial.so): clone a project to your machine, run it
-locally with its own data, sync changes both ways, and publish.
+locally against your own schema and fixtures, sync changes both ways, and publish.
 
 ```sh
 npm i -g @trivial-so/cli
