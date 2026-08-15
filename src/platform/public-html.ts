@@ -1,14 +1,13 @@
 /**
  * The one comment-stripping policy for bytes that leave the building.
  *
- * The 2026-08-07 leak audit found five independent HTML emitters with three
- * different policies (ui/vite.config.ts stripped, sdk/copy-static stripped,
- * error pages + preview bridge + email shell + end-user-auth pages did not).
- * Divergent strippers is how `sdk/callback.html` defeated its own: the stripper
- * handled `<!-- -->` and the leak was a `//` comment inside its `<script>`.
+ * A 2026-08-07 audit found five independent HTML emitters running three
+ * different comment policies between them, and one of them defeated its own
+ * stripper: it handled `<!-- -->` while the leak was a `//` comment inside a
+ * `<script>`.
  *
- * So: one function, one policy, used by every emitter, backed by
- * scripts/check-public-artifacts.mjs which fails the deploy if anything slips.
+ * So: one function, one policy, used by every emitter, with a build check that
+ * fails if anything slips.
  *
  * OPT-OUTS, matching the conventions minifiers already use:
  *   `<!--! … -->`  `/*! … *\/`  `//! …`   →  preserved (legal banners)

@@ -32,8 +32,8 @@ export function git(cwd: string, args: string[], opts: { timeoutMs?: number } = 
  * The credential helper `trivial clone` hands git for ONE invocation, and then persists into the
  * clone's LOCAL config.
  *
- * Same string `trivial init` writes (`cli/src/index.ts`), and the same reason  built the
- * helper at all: the token never lands in `.git/config`, in `git remote -v`, in shell history or in
+ * Same string `trivial init` writes (`src/index.ts`), and it exists for one reason:
+ * the token never lands in `.git/config`, in `git remote -v`, in shell history or in
  * a screenshot. Scoped by HOST — `credential.<gitBase>.helper` — so it is never consulted for
  * GitHub or anyone else.
  *
