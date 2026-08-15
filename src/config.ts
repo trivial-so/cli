@@ -109,3 +109,47 @@ export async function listCredentials(): Promise<Record<string, string>> { retur
 export async function removeCredentialsDir(): Promise<void> {
   await fs.rm(credsDir(), { recursive: true, force: true });
 }
+
+// ── profile — ~/.trivial/profile.json ──
+// The display name for an apiUrl, cached when `login` succeeds. Purely cosmetic, and deliberately
+// separate from credentials.json: that file is a flat map of secrets and stays that shape.
+//
+// It exists because the situation screen (bare `trivial`) makes NO network call — it has to be
+// instant and work on a plane — so without a cache it could not say who this machine is. Nothing
+// authenticates with it; `trivial whoami` is the verb that actually asks the server.
+export interface Profile { username?: string }
+
+function profilePath(): string { return join(credsDir(), 'profile.json'); }
+
+async function readProfiles(): Promise<Record<string, Profile>> {
+  try { return JSON.parse(await fs.readFile(profilePath(), 'utf8')) as Record<string, Profile>; } catch { return {}; }
+}
+
+export async function getProfile(apiUrl: string): Promise<Profile | null> {
+  return (await readProfiles())[apiUrl] ?? null;
+}
+
+export async function setProfile(apiUrl: string, profile: Profile): Promise<void> {
+  const all = await readProfiles();
+  all[apiUrl] = profile;
+  await fs.mkdir(credsDir(), { recursive: true, mode: 0o700 });
+  await fs.writeFile(profilePath(), JSON.stringify(all, null, 2) + '\n', 'utf8');
+}
+
+export async function clearProfile(apiUrl: string): Promise<void> {
+  const all = await readProfiles();
+  if (!(apiUrl in all)) return;
+  delete all[apiUrl];
+  await fs.writeFile(profilePath(), JSON.stringify(all, null, 2) + '\n', 'utf8');
+}
+
+/**
+ * Has this machine ever done anything with Trivial?
+ *
+ * `~/.trivial` is created by the first login and removed only by `uninstall`, so its absence is a
+ * good-enough proxy for "just installed" — which is the one moment the greeting can afford to
+ * introduce the product rather than get out of the way.
+ */
+export async function credsDirExists(): Promise<boolean> {
+  try { await fs.stat(credsDir()); return true; } catch { return false; }
+}

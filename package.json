@@ -1,6 +1,6 @@
 {
   "name": "@trivial-so/cli",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "type": "module",
   "description": "The trivial folder-path client \u2014 pull/push your Trivial project from your laptop.",
   "license": "MIT",

@@ -4,6 +4,29 @@ User-facing changes to the `trivial` CLI. Any change in behaviour bumps the vers
 entry here: the version is baked into the bundle at build time (`trivial --version`), so this file
 is how a reported version maps back to what it does.
 
+## 0.20.0 — 2026-08-15
+
+- **`trivial` with no command is now a situation, not a manual.** It reads the folder you are
+  standing in and answers where you are and what to do next — a first run gets a greeting and one
+  step (`trivial login`); a project folder gets its name, its local diff and the verb that matters
+  right now. It makes no network call, so it is instant and it works offline; anything cloud-shaped
+  stays in `trivial status`, which was asked a question and is allowed to be slow.
+- **`trivial help` is the reference, grouped by the arc** — start, the loop, ship, review, this
+  machine. The git-remote and agent-token blocks moved to `trivial help git` and
+  `trivial help agents`, with `trivial help install` for npm, npx, sudo-free prefixes and
+  provenance. Previously all of it was one 45-line screen printed at a bare `trivial`, which
+  overflowed a standard terminal: what scrolled away was `trivial login`, and what stayed on screen
+  was the credential-helper block.
+- **A typo gets one line and a suggestion**, not the whole reference: `trivial puhs` answers
+  "Did you mean `push`?". Transpositions and abbreviations both resolve (`stat` -> `status`).
+- **A folder cloned with plain git is recognised as one.** It carries no `.trivial/state.json`, so
+  the greeting used to call it "not a project folder" while the maker was plainly standing in one.
+  It now names the project from the git remote and says which verbs apply.
+- **`trivial clone` ends with next steps**, the way `create` and `init` already did — it is the
+  command the docs lead with, and it was the one that stopped at a bare success line.
+- `trivial login` caches your display name locally so the greeting can use it without asking the
+  server. `trivial logout` forgets it.
+
 ## 0.19.0 — 2026-08-14
 
 - **npm owns updates for npm installs.** `trivial update` overwrites its own file, which is right

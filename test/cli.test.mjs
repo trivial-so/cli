@@ -1088,8 +1088,8 @@ test('the old create-form `trivial init --here` hard-errors and names `create --
 test('`create` is a real verb and `help` teaches both halves of the split', async () => {
   const { home, work, base } = freshDirs();
   const help = await run(['help'], { home, cwd: work });
-  assert.match(help.out, /trivial create <name>/, 'help must document create');
-  assert.match(help.out, /trivial init .*adopt THIS folder/, 'help must document init as adoption');
+  assert.match(help.out, /create <name> \| --here/, 'help must document create');
+  assert.match(help.out, /init .*adopt THIS folder/, 'help must document init as adoption');
   // Wired to a real handler: with no credential it must fail on AUTH, not on "unknown command".
   const r = await run(['create', 'thing'], { home, cwd: work });
   assert.notEqual(r.code, 0);
@@ -1658,5 +1658,132 @@ test('a folder holding only .git is called a repository, not "a codebase"', asyn
   writeFileSync(join(app, 'src', 'a.ts'), 'x');
   const r2 = await run(['create', '--here', '--api', API], { home, cwd: app });
   assert.match(r2.out, /contains a codebase/);
+  rmSync(base, { recursive: true, force: true });
+});
+
+// ── the situation screen (bare `trivial`) ───────────────────────────────────
+// Four states, one screen. The contract that matters most is the last assertion in each: the
+// greeting makes NO network call, because it is what a new install runs and what someone types
+// when they have lost the thread — it has to answer instantly, and it has to answer offline.
+
+test('bare `trivial` on a fresh machine greets, and asks for exactly one thing', async () => {
+  const { home, work, base } = freshDirs();
+  const r = await run([], { home, cwd: work });
+  assert.equal(r.code, 0, 'a bare invocation is not an error');
+  assert.match(r.out, /t r i v i a l/, 'the first run gets the wordmark');
+  assert.match(r.out, /next:\n\s+trivial login/, 'and exactly one next step');
+  assert.match(r.out, /npm audit signatures/, 'the provenance line belongs to the first run');
+  // The failure this screen replaced: 45 lines of reference, with `login` scrolled off the top.
+  assert.doesNotMatch(r.out, /credential\.https/, 'the git helper block is not first-contact material');
+  assert.ok(r.out.split('\n').length < 20, `the greeting must fit a terminal, got ${r.out.split('\n').length} lines`);
+  assert.equal(mock.requests.length, 0, 'the greeting must not touch the network');
+  rmSync(base, { recursive: true, force: true });
+});
+
+test('bare `trivial` on a known machine that is signed out drops the ceremony', async () => {
+  const { home, work, base } = freshDirs();
+  mkdirSync(join(home, '.trivial'), { recursive: true });   // been here before, no credential
+  const r = await run([], { home, cwd: work });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /isn't signed in/);
+  assert.match(r.out, /trivial login/);
+  assert.doesNotMatch(r.out, /t r i v i a l/, 'the wordmark is a first-run thing only');
+  assert.doesNotMatch(r.out, /npm audit signatures/);
+  rmSync(base, { recursive: true, force: true });
+});
+
+test('bare `trivial` signed in but outside a project offers the three ways in', async () => {
+  const { home, work, base } = freshDirs();
+  writeCreds(home, { [API]: 'trv_user' });
+  writeFileSync(join(home, '.trivial', 'profile.json'), JSON.stringify({ [API]: { username: 'ryan' } }));
+  const r = await run(['--api', API], { home, cwd: work });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /signed in as ryan/, 'the cached name, without asking the server');
+  assert.match(r.out, /not in a project folder/);
+  for (const verb of ['trivial create', 'trivial clone', 'trivial init']) {
+    assert.match(r.out, new RegExp(verb), `must offer ${verb}`);
+  }
+  assert.equal(mock.requests.length, 0, 'still no network');
+  rmSync(base, { recursive: true, force: true });
+});
+
+test('bare `trivial` inside a project reads the folder and points at the unsent work', async () => {
+  const { home, work, base } = freshDirs();
+  clonedFixture(home, work);
+  writeState(work, { ...readState(work), ref: 'ryan/field-notes' });
+  writeFileSync(join(work, 'index.html'), '<h1>edited</h1>');   // one local change
+  const r = await run([], { home, cwd: work });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /ryan\/field-notes/, 'the header names the project');
+  assert.match(r.out, /1 changed, 0 deleted/, 'the local diff is local — no server involved');
+  assert.match(r.out, /next:\n\s+trivial push/, 'unsent work is the recommended verb');
+  assert.equal(mock.requests.length, 0, 'the diff is computed from the folder, not fetched');
+  rmSync(base, { recursive: true, force: true });
+});
+
+test('a clean folder moves the recommendation from push to dev', async () => {
+  const { home, work, base } = freshDirs();
+  clonedFixture(home, work);
+  const r = await run([], { home, cwd: work });
+  assert.match(r.out, /no local changes/);
+  assert.match(r.out, /next:\n\s+trivial dev/, 'nothing to send — go build something');
+  rmSync(base, { recursive: true, force: true });
+});
+
+// ── `trivial help` — the reference, and only when asked ─────────────────────
+
+test('help is grouped, and the reference-grade material moved to topics', async () => {
+  const { home, work, base } = freshDirs();
+  const r = await run(['help'], { home, cwd: work });
+  assert.equal(r.code, 0);
+  for (const group of ['start', 'the loop', 'ship', 'review', 'this machine']) {
+    assert.match(r.out, new RegExp(`\\n  ${group}\\b`), `help must group under "${group}"`);
+  }
+  // These used to be on the screen a first-time user saw. They are now one command away.
+  assert.doesNotMatch(r.out, /credential\.https/, 'the git helper block belongs to `help git`');
+  assert.doesNotMatch(r.out, /trv_\.\.\./, 'the token form belongs to `help agents`');
+
+  const git = await run(['help', 'git'], { home, cwd: work });
+  assert.match(git.out, /credential\.https:\/\/git\.trivial\.so\.helper/);
+  const agents = await run(['help', 'agents'], { home, cwd: work });
+  assert.match(agents.out, /--token trv_\.\.\./);
+  const install = await run(['help', 'install'], { home, cwd: work });
+  assert.match(install.out, /npm i -g @trivial-so\/cli/);
+  assert.match(install.out, /npm audit signatures/);
+
+  const missing = await run(['help', 'nope'], { home, cwd: work });
+  assert.match(missing.out, /no help topic "nope"/);
+  assert.match(missing.out, /git\s+agents\s+install/, 'and it names the ones that exist');
+  rmSync(base, { recursive: true, force: true });
+});
+
+test('an unknown command gets one line and a suggestion, not the manual', async () => {
+  const { home, work, base } = freshDirs();
+  const typo = await run(['puhs'], { home, cwd: work });
+  assert.equal(typo.code, 1);
+  assert.match(typo.out, /unknown command 'puhs'\. Did you mean `push`\?/, 'a transposition is the commonest typo');
+  assert.ok(typo.out.split('\n').length <= 3, `a typo is worth 2 lines, got: ${typo.out}`);
+
+  const abbrev = await run(['stat'], { home, cwd: work });
+  assert.match(abbrev.out, /Did you mean `status`\?/, 'an abbreviation is not a typo');
+
+  const nonsense = await run(['frobnicate'], { home, cwd: work });
+  assert.equal(nonsense.code, 1);
+  assert.doesNotMatch(nonsense.out, /Did you mean/, 'no suggestion is better than a wrong one');
+  rmSync(base, { recursive: true, force: true });
+});
+
+test('a folder cloned with git is recognised as one, not called "not a project"', async () => {
+  const { home, work, base } = freshDirs();
+  writeCreds(home, { [API]: 'trv_user' });
+  execFileSync('git', ['init', '-q', '.'], { cwd: work });
+  execFileSync('git', ['remote', 'add', 'trivial', 'https://git.trivial.so/ryan/field-notes'], { cwd: work });
+  const r = await run(['--api', API], { home, cwd: work });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /ryan\/field-notes \(git checkout\)/, 'the remote names the project');
+  assert.match(r.out, /no sync state/, 'and says why the sync verbs will not work');
+  assert.match(r.out, /next:\n\s+trivial dev/, '`dev` is the one CLI verb that needs no state');
+  assert.doesNotMatch(r.out, /not in a project folder/, 'they are plainly standing in one');
+  assert.equal(mock.requests.length, 0);
   rmSync(base, { recursive: true, force: true });
 });

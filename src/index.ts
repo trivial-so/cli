@@ -15,6 +15,7 @@ import {
   readState, writeState, getToken, setToken,
   getUserToken, setUserToken, deleteUserToken,
   credsDirPath, listCredentials, removeCredentialsDir, type State,
+  getProfile, setProfile, clearProfile, credsDirExists,
 } from './config.js';
 import { hashTree, diffLocal, writeLocalFile, deleteLocalFile, readLocalBytes, decodeWireContent, isBinaryBuffer, sha256, isIgnoredPath } from './sync.js';
 import {
@@ -22,12 +23,13 @@ import {
   packedSizeKb, remoteUrl, remoteHeadBranch, modifiedAgainstHead, cloneRepo,
 } from './git.js';
 import { diffLines, countChanges, renderDiff } from './diff.js';
+import { situationScreen, helpText, suggest } from './screens.js';
 
 const DEFAULT_API = 'https://api.trivial.so';
 
 // Stamped by esbuild --define from package.json's version (see the build script);
-// 'dev' only when run un-bundled. The version discipline: any behavior change
-// bumps package.json + cli/CHANGELOG.md in the same commit.
+// 'dev' only when run un-bundled. The version discipline: any behaviour change
+// bumps package.json + CHANGELOG.md in the same commit.
 declare const CLI_VERSION: string;
 const VERSION = typeof CLI_VERSION !== 'undefined' ? CLI_VERSION : 'dev';
 
@@ -37,7 +39,12 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 interface Args { cmd: string; positional: string[]; flags: Record<string, string | boolean>; }
 function parseArgs(argv: string[]): Args {
-  const [cmd, ...rest] = argv;
+  // A bare `trivial`, or one carrying only flags (`trivial --api https://…`), has no verb: the
+  // situation screen IS the command. The long aliases stay verbs so `--help` and `-v` keep working.
+  const ALIAS = new Set(['--help', '-h', '--version', '-v']);
+  const verb = argv.length > 0 && (!argv[0].startsWith('-') || ALIAS.has(argv[0]));
+  const cmd = verb ? argv[0] : '';
+  const rest = verb ? argv.slice(1) : argv;
   const positional: string[] = [];
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < rest.length; i++) {
@@ -49,7 +56,7 @@ function parseArgs(argv: string[]): Args {
       if (next !== undefined && !next.startsWith('-')) { flags[key] = next; i++; } else flags[key] = true;
     } else positional.push(a);
   }
-  return { cmd: cmd || 'help', positional, flags };
+  return { cmd, positional, flags };
 }
 
 async function loadContext(folder: string): Promise<{ state: State; token: string }> {
@@ -737,7 +744,7 @@ function gitBaseForApi(apiUrl: string): string | null {
 
 // ── init ── adopt THIS folder into a new project.
 //
-// The transport is GIT, not the write-set. See cli/src/git.ts for why: the write-set's MAX_FILES
+// The transport is GIT, not the write-set. See src/git.ts for why: the write-set's MAX_FILES
 // =1000 and ~7 MB body ceiling are transport properties, and adoption is exactly the case that
 // exceeds them. The git vhost takes 512 MB and caps no file count.
 async function cmdInit(args: Args): Promise<void> {
@@ -1042,6 +1049,7 @@ async function cmdClone(args: Args): Promise<void> {
       console.log(`✓ cloned ${proj.owner}/${proj.slug} → ${dir}/  (${g.count} files @ ${short(g.baseSha)}, with history)`);
       console.log(`  git remote "trivial" → ${g.url}  —  \`git pull\` / \`git push\` work here.`);
       warnIfEmptyClone(g.count, g.baseSha);
+      await printCloneNextSteps(dir);
       return;
     }
     console.log(`  ℹ no git history in this clone (${g.reason}) — taking a snapshot instead.`);
@@ -1055,6 +1063,20 @@ async function cmdClone(args: Args): Promise<void> {
   await ensureLocalConfig(dir, state.projectId);
   console.log(`✓ cloned ${proj.owner ?? '?'}/${proj.slug} → ${dir}/  (${count} files @ ${short(state.baseSha)})`);
   warnIfEmptyClone(count, state.baseSha);
+  await printCloneNextSteps(dir);
+}
+
+/**
+ * Where `create` and `init` both already ended, and `clone` did not — even though clone is the
+ * entry point the README leads with, so the most common first contact was the one that stopped at
+ * a bare success line and left the maker to guess.
+ */
+async function printCloneNextSteps(dir: string): Promise<void> {
+  const hasPackageJson = await fsp.stat(join(dir, 'package.json')).then(() => true, () => false);
+  console.log('\nnext:');
+  console.log(`  cd ${dir}`);
+  if (hasPackageJson) console.log('  pnpm install');
+  console.log('  trivial dev            # run it locally, with its data');
 }
 
 /** Read a secret from the terminal without echoing (and without it touching argv/history). */
@@ -1156,6 +1178,8 @@ async function cmdLogin(args: Args): Promise<void> {
       const prev = await getUserToken(apiUrl);
       await setUserToken(apiUrl, poll.token);
       if (prev && prev !== poll.token) await serverLogout(apiUrl, prev).catch(() => { /* already dead */ });
+      // Cosmetic cache, so bare `trivial` can greet you by name without asking the server.
+      if (poll.user.username) await setProfile(apiUrl, { username: poll.user.username });
       console.log(`\n✓ logged in as ${poll.user.username ?? 'you'} — this login covers all your projects. Try \`trivial projects\`.`);
       return;
     }
@@ -1322,6 +1346,7 @@ async function cmdWhoami(args: Args): Promise<void> {
   const token = await getUserToken(apiUrl);
   if (!token) die('not logged in — run `trivial login`. (Per-project tokens, if any, still work inside their folders.)');
   const { user } = await whoami(apiUrl, token!);
+  if (user.username) await setProfile(apiUrl, { username: user.username });
   console.log(`✓ ${user.username ?? user.id}  (${apiUrl})`);
 }
 
@@ -1331,6 +1356,7 @@ async function cmdLogout(args: Args): Promise<void> {
   if (!token) { console.log('✓ already logged out.'); return; }
   try { await serverLogout(apiUrl, token!); } catch { /* revoke is best-effort — always forget locally */ }
   await deleteUserToken(apiUrl);
+  await clearProfile(apiUrl);
   console.log('✓ logged out — the credential was revoked and removed from this machine.');
 }
 
@@ -1523,7 +1549,7 @@ async function cmdBuild(): Promise<void> {
   const site = await siteForFolder(state, token);
   console.log(`building ${site.handle}…`);
   const out = await buildPreview(state.apiUrl, site.id, token);
-  // 's lesson, which the web UI already learned: this endpoint does NOT throw on a failed build,
+  // The lesson the web UI already learned: this endpoint does NOT throw on a failed build,
   // it returns a status. Treating anything non-'built' as success would report a green build over a
   // broken one.
   if (out.status !== 'built' && out.status !== 'completed') {
@@ -1627,51 +1653,59 @@ async function cmdSync(args: Args): Promise<void> {
   }
 }
 
-const HELP = `trivial ${VERSION} — the terminal loop: clone, run, ship
+/**
+ * `trivial` with no verb — the situation screen.
+ *
+ * NO network call, on purpose. This is the first thing a new install runs and the thing a maker
+ * types when they have lost the thread, so it has to answer instantly and it has to answer on a
+ * plane. Everything cloud-shaped — how far ahead the project is, whether Draft is ahead of Live —
+ * belongs to `trivial status`, which is allowed to be slow because it was asked a question.
+ */
+async function cmdSituation(args: Args): Promise<void> {
+  const folder = process.cwd();
+  const state = await readState(folder);
+  const apiUrl = (args.flags.api as string) || state?.apiUrl || DEFAULT_API;
+  // The same precedence the commands use: a project token wins inside its folder, the login covers
+  // everywhere else. Either one means this machine can do work.
+  const token = state ? await getToken(apiUrl, state.projectId) : await getUserToken(apiUrl);
 
-  trivial login                        sign in via browser — one login, all your projects
-  trivial create <name> | --here       a NEW project, scaffolded (needs an empty folder)
-  trivial init [--name <name>] [--yes] adopt THIS folder — bring code you already have
-  trivial clone <owner>/<slug> [dir]   clone a project you're a member of (also takes a URL or id)
-                                       clone/create bring the git history too; --no-git for a
-                                       plain snapshot (and it is the automatic fallback)
-  trivial pull [--force]               apply cloud changes
-  trivial push [-m "message"]          send local changes
-  trivial propose [-m "message"]       send local changes for REVIEW
-  trivial proposals                    incoming proposals waiting for you
-  trivial review <id>                  read one, as a diff
-  trivial accept <id>                  apply it to Draft
-  trivial reject <id> [--yes]          drop it (deletes their proposal)
-  trivial sync [--interval <sec>]      continuous two-way sync
-  trivial build                        build Draft — make a pushed change visible
-  trivial publish [-m "label"]         publish Draft → Live, and print the URL
-  trivial dev [--port N] [--as <user>] run the app locally, with its data
-  trivial status                       local diff + cloud-ahead + Draft-vs-Live
-  trivial open                         open this project in the browser
-  trivial projects                     list your projects
-  trivial whoami                       who this machine is signed in as
-  trivial logout                       revoke + forget this machine's login
-  trivial update [--force]             update to the latest release
-  trivial uninstall [--yes]            sign out + remove credentials and the CLI itself
-  trivial version                      print the installed version
+  // A folder cloned straight from the git remote has no sync state, but it is unmistakably a
+  // project — one `git remote get-url` (a config read, not a tree walk) is what tells them apart.
+  let gitCheckout: string | null = null;
+  if (!state) {
+    try {
+      const url = await remoteUrl(folder, 'trivial');
+      const path = url ? new URL(url).pathname.replace(/^\/+/, '').replace(/\.git$/, '') : '';
+      if (path.split('/').filter(Boolean).length === 2) gitCheckout = path;
+    } catch { /* not a repo, no git, or an ssh-style URL — the plain screen is still correct */ }
+  }
 
-  install / update:
-  npm i -g @trivial-so/cli             # or: npx @trivial-so/cli <command>
-  npm update -g @trivial-so/cli        # standalone installs: trivial update
+  let local: { writes: number; deletes: number } | null = null;
+  if (state) {
+    // hashTree skips node_modules/dist/build, so this is a few milliseconds even on a real tree.
+    // Guarded anyway: a greeting that throws on an odd filesystem would be worse than a quiet one.
+    try {
+      const { writes, deletes } = diffLocal(await hashTree(folder), state.files);
+      local = { writes: writes.length, deletes: deletes.length };
+    } catch { /* unreadable tree — the rest of the screen still helps */ }
+  }
 
-  git remote (so no token ever goes in a URL):
-  git config --global credential.https://git.trivial.so.helper '!trivial git-credential'
-  git remote add trivial https://git.trivial.so/<owner>/<slug>
-  git push trivial main                # main = the project's source branch
-
-  agents / CI (per-project tokens minted in the web UI — least privilege):
-  trivial clone --project <id> --token trv_... [dir]
-  trivial login --token trv_...        inside a cloned folder: save that project's token`;
+  console.log(situationScreen({
+    version: VERSION,
+    firstRun: !(await credsDirExists()),
+    signedIn: Boolean(token),
+    username: (await getProfile(apiUrl))?.username ?? null,
+    project: state ? (state.ref ?? state.projectId) : null,
+    gitCheckout,
+    local,
+  }));
+}
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   try {
     switch (args.cmd) {
+      case '': return await cmdSituation(args);
       case 'create': return await cmdCreate(args);
       case 'init': return await cmdInit(args);
       case 'git-credential': return await cmdGitCredential(args);
@@ -1696,8 +1730,13 @@ async function main(): Promise<void> {
       case 'update': return await cmdUpdate(args);
       case 'uninstall': return await cmdUninstall(args);
       case 'version': case '--version': case '-v': console.log(`trivial ${VERSION}`); return;
-      case 'help': case '--help': case '-h': console.log(HELP); return;
-      default: die(`unknown command '${args.cmd}'.\n\n${HELP}`);
+      case 'help': case '--help': case '-h': console.log(helpText(VERSION, args.positional[0])); return;
+      default: {
+        // One line, not the manual. Dumping the whole reference on a typo is how a mistyped `puhs`
+        // used to fill the terminal with the git credential-helper block.
+        const near = suggest(args.cmd);
+        die(`unknown command '${args.cmd}'.${near ? ` Did you mean \`${near}\`?` : ''}\n  \`trivial help\` lists them all.`);
+      }
     }
   } catch (err) {
     if (err instanceof HttpError) {
