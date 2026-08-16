@@ -1,6 +1,6 @@
 {
   "name": "@trivial-so/cli",
-  "version": "0.20.1",
+  "version": "0.21.0",
   "type": "module",
   "description": "The terminal client for Trivial \u2014 your projects, on your machine.",
   "license": "MIT",

@@ -434,9 +434,15 @@ test('push sends the local diff and advances the baseline', async () => {
     assert.deepEqual(paths, ['index.html', 'new.css']);
     return [200, { commit: 'bbbb2222' }];
   };
+  // The read-back every push now performs (see the regression below for why). Nothing extra came
+  // back here, so this is the ordinary case: the baseline advances to the push's own commit.
+  mock.routes[`GET /api/projects/${PROJECT}/changes`] = () => [200, {
+    head: 'bbbb2222', rebuilt: false, truncated: false, files: [],
+  }];
   const r = await run(['push', '-m', 'edit'], { home, cwd: work });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /pushed 2 write\(s\), 0 delete\(s\)/);
+  assert.doesNotMatch(r.out, /received/, 'nothing was generated, so nothing should be announced');
   assert.equal(readState(work).baseSha, 'bbbb2222');
   rmSync(base, { recursive: true, force: true });
 });
@@ -1848,5 +1854,64 @@ test('update and uninstall say what npx actually is', async () => {
   assert.match(un.out, /no installed copy to remove/);
   // The binary is npx's problem; the credential is ours, and it may still exist.
   assert.match(un.out, /trivial logout/);
+  rmSync(base, { recursive: true, force: true });
+});
+
+// A push does not only carry your files: the server can write its own INTO THE SAME COMMIT
+// (declaring a data model regenerates the typed row module beside it, and the checkpoint is
+// `git add -A`). Jumping the baseline to that commit asserts it equals what was sent, which puts
+// the server's file on the far side of a cursor already past it — the feed then answers "nothing
+// since that commit", pull says "already up to date", and the file is invisible FOREVER rather
+// than late. Found on a real project: the regenerated types never reached the folder, and stale
+// types still compile, so nothing complained.
+test('push receives files the server generated into its own commit', async () => {
+  const { home, work, base } = freshDirs();
+  clonedFixture(home, work);                       // baseline aaaa1111, index.html
+  mkdirSync(join(work, 'src'), { recursive: true });
+  writeFileSync(join(work, 'src', 'trivial.manifest.json'), '{"version":1}');
+
+  mock.routes[`POST /api/projects/${PROJECT}/write-set`] = () => [200, { commit: 'bbbb2222' }];
+  mock.routes[`GET /api/projects/${PROJECT}/changes`] = ({ query }) => {
+    // THE CRUX: the read-back must ask from the PRE-push baseline. Asking from the new commit
+    // would return nothing and reproduce the bug this test exists for.
+    assert.equal(query.since, 'aaaa1111', 'the read-back must start before the push, not after it');
+    return [200, {
+      head: 'bbbb2222', rebuilt: false, truncated: false,
+      files: [
+        // What we just sent, echoed back — converged, must not be rewritten or reported.
+        { path: 'src/trivial.manifest.json', status: 'modified', content: '{"version":1}' },
+        // What the server wrote on its own.
+        { path: 'src/lib/trivial-tables.ts', status: 'added', content: 'export interface PostsRow {}\n' },
+      ],
+    }];
+  };
+
+  const r = await run(['push', '-m', 'declare a table'], { home, cwd: work });
+  assert.equal(r.code, 0, r.out);
+  assert.equal(
+    readFileSync(join(work, 'src', 'lib', 'trivial-tables.ts'), 'utf8'),
+    'export interface PostsRow {}\n',
+    'the generated file must land in the folder',
+  );
+  // Announced, and named — a file that appears unasked is confusing once if it is explained.
+  assert.match(r.out, /received 1 file\(s\) the server generated: src\/lib\/trivial-tables\.ts/);
+  const state = readState(work);
+  assert.equal(state.baseSha, 'bbbb2222', 'the baseline still ends up at the push commit');
+  assert.ok(state.files['src/lib/trivial-tables.ts'], 'and the generated file joins the baseline');
+  rmSync(base, { recursive: true, force: true });
+});
+
+test('a push whose read-back fails keeps the old baseline rather than burying the write', async () => {
+  const { home, work, base } = freshDirs();
+  clonedFixture(home, work);
+  writeFileSync(join(work, 'index.html'), '<h1>edited</h1>');
+  mock.routes[`POST /api/projects/${PROJECT}/write-set`] = () => [200, { commit: 'bbbb2222' }];
+  // No changes route at all: the feed is unreachable.
+  const r = await run(['push', '-m', 'edit'], { home, cwd: work });
+  assert.equal(r.code, 0, 'the push landed — a failed read-back must not fail it');
+  assert.match(r.out, /pushed 1 write\(s\)/);
+  // Staying put means the next push answers 409 and says "pull first", which is recoverable.
+  // Advancing would bury whatever the server wrote, which is not.
+  assert.equal(readState(work).baseSha, 'aaaa1111');
   rmSync(base, { recursive: true, force: true });
 });

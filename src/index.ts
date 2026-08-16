@@ -437,7 +437,7 @@ async function pullRemote(folder: string, state: State, token: string, force: bo
 // ── push ── send the local diff. Returns an outcome (no die) for the same reason.
 type PushOutcome =
   | { kind: 'nothing' }
-  | { kind: 'pushed'; writes: number; deletes: number; commit: string }
+  | { kind: 'pushed'; writes: number; deletes: number; commit: string; received: string[] }
   | { kind: 'conflict' }
   | { kind: 'invalid'; reason: string }
   | { kind: 'forbidden'; message: string }
@@ -480,10 +480,43 @@ async function pushLocal(folder: string, state: State, token: string, message: s
   ];
   const { status, body } = await pushWriteSet(state.apiUrl, state.projectId, token, state.baseSha, message, files);
   if (status === 200) {
-    state.baseSha = body.commit ?? state.baseSha;
+    // The bytes we sent are now the local baseline — that much is certain, we wrote them.
+    // `sent` is a COPY: `state.files` is about to be mutated by the read-back below, and comparing
+    // an object against itself would report that the server generated nothing, every time.
+    const sent = { ...current };
     state.files = current;
+
+    // But the COMMIT is not ours alone, and this is the whole reason for what follows.
+    //
+    // A push can make the server write files of its own INTO THE SAME COMMIT — declaring a data
+    // model regenerates the typed row module beside it, and `git add -A` sweeps that in. Jumping
+    // `baseSha` straight to `body.commit` would assert that the commit equals what we sent, and
+    // the server's file would then sit on the far side of a cursor already past it: the change
+    // feed answers "nothing since that commit", `pull` reports "already up to date", and the file
+    // is invisible FOREVER rather than merely late.
+    //
+    // (Observed on a real project: a manifest push regenerated `src/lib/trivial-tables.ts` in the
+    // push's own commit; every subsequent pull said up to date while the folder held the previous
+    // version. The stale types still compile, so nothing complains.)
+    //
+    // So: keep the pre-push baseline and reconcile from it. Everything we just sent comes back
+    // converged and is written nowhere; anything else is the server's, and lands.
     await writeState(folder, state);
-    return { kind: 'pushed', writes: writes.length, deletes: deletes.length, commit: body.commit };
+    // A failed read-back must never fail a push that landed: the bytes are on the server either
+    // way. Treat it as "not reconciled" and leave the baseline where it was.
+    const reconciled = await pullRemote(folder, state, token, false)
+      .catch(() => ({ kind: 'conflict' as const, files: [] as string[] }));
+    // Whatever now differs from the tree we sent came from the server, not from us.
+    const received = reconciled.kind === 'applied'
+      ? Object.keys(state.files).filter((path) => state.files[path] !== sent[path]).sort()
+      : [];
+    if (reconciled.kind !== 'applied') {
+      // The push landed; only the read-back didn't. Leaving `baseSha` where it was is deliberate —
+      // the next push answers 409 and says "pull first", which is recoverable. Advancing it would
+      // bury the server's write, which is not.
+      await writeState(folder, state);
+    }
+    return { kind: 'pushed', writes: writes.length, deletes: deletes.length, commit: body.commit, received };
   }
   if (status === 409) return { kind: 'conflict' };
   if (status === 422) return { kind: 'invalid', reason: body.errors?.[0]?.reason ?? 'a file failed validation' };
@@ -1431,7 +1464,14 @@ async function cmdPush(args: Args): Promise<void> {
   const out = await pushLocal(folder, state, token, (args.flags.message as string) || 'push from CLI');
   switch (out.kind) {
     case 'nothing': console.log('✓ nothing to push.'); return;
-    case 'pushed': console.log(`✓ pushed ${out.writes} write(s), ${out.deletes} delete(s) → ${short(out.commit)}`); return;
+    case 'pushed':
+      console.log(`✓ pushed ${out.writes} write(s), ${out.deletes} delete(s) → ${short(out.commit)}`);
+      // Name them. A file that arrives in your folder without you asking is confusing exactly once
+      // if it is announced, and confusing forever if it is not.
+      if (out.received.length) {
+        console.log(`  ↓ and received ${out.received.length} file(s) the server generated: ${out.received.join(', ')}`);
+      }
+      return;
     case 'conflict': die('the cloud moved since your last sync — run `trivial pull` first, then push again.');
     case 'invalid': die(`rejected (invalid): ${out.reason}`);
     case 'forbidden': die(`rejected (forbidden): ${out.message}`);
@@ -1682,7 +1722,10 @@ async function cmdSync(args: Args): Promise<void> {
           if (pulled.count) console.log(`↓ pulled ${pulled.count} change(s)  (@ ${short(pulled.head)})`);
         }
         const pushed = await pushLocal(folder, state, token, 'sync from laptop');
-        if (pushed.kind === 'pushed') console.log(`↑ pushed ${pushed.writes} write(s), ${pushed.deletes} delete(s) → ${short(pushed.commit)}`);
+        if (pushed.kind === 'pushed') {
+          console.log(`↑ pushed ${pushed.writes} write(s), ${pushed.deletes} delete(s) → ${short(pushed.commit)}`);
+          if (pushed.received.length) console.log(`↓ received ${pushed.received.length} generated file(s): ${pushed.received.join(', ')}`);
+        }
         else if (pushed.kind === 'invalid') console.log(`⚠ push rejected (invalid): ${pushed.reason}`);
         else if (pushed.kind === 'forbidden') console.log(`⚠ push rejected: ${pushed.message}`);
         else if (pushed.kind === 'over_quota') console.log('⚠ push rejected: over quota');

@@ -4,6 +4,28 @@ User-facing changes to the `trivial` CLI. Any change in behaviour bumps the vers
 entry here: the version is baked into the bundle at build time (`trivial --version`), so this file
 is how a reported version maps back to what it does.
 
+## 0.21.0 — 2026-08-16
+
+- **A push can bring files back, and now it does.** Pushing does not only send your files: the
+  server can write its own into the same commit — declaring a data model regenerates the typed row
+  module beside the manifest, and the checkpoint sweeps it in. `push` used to jump its baseline
+  straight to that commit, which asserts the commit equals what was sent. It doesn't, so the
+  server's file ended up on the far side of a cursor already past it: `pull` answered *"already up
+  to date"* forever and the file never arrived. Nothing complained, because stale generated types
+  still compile.
+
+  `push` now keeps its pre-push baseline and reconciles from it. Anything the server generated
+  lands in your folder and is named:
+
+  ```
+  ✓ pushed 1 write(s), 0 delete(s) → 7b2e338
+    ↓ and received 1 file(s) the server generated: src/lib/trivial-tables.ts
+  ```
+
+  It costs one extra round trip per push. If that read-back fails the baseline stays where it was,
+  on purpose — the next push then says "pull first", which you can recover from, where advancing
+  would bury the server's write, which you cannot.
+
 ## 0.20.1 — 2026-08-15
 
 - **`trivial init` could not adopt a folder unless `trivial` was on your PATH.** Adoption pushes
