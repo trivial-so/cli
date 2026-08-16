@@ -1,5 +1,10 @@
 # Trivial CLI
 
+[![npm](https://img.shields.io/npm/v/@trivial-so/cli)](https://www.npmjs.com/package/@trivial-so/cli)
+[![tests](https://img.shields.io/github/actions/workflow/status/trivial-so/cli/ci.yml?label=tests)](https://github.com/trivial-so/cli/actions/workflows/ci.yml)
+[![node](https://img.shields.io/node/v/@trivial-so/cli)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/@trivial-so/cli)](./LICENSE)
+
 The terminal client for [Trivial](https://trivial.so): clone a project to your machine, run it
 locally against your own schema and fixtures, sync changes both ways, and publish.
 
