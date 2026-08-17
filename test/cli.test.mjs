@@ -1915,3 +1915,34 @@ test('a push whose read-back fails keeps the old baseline rather than burying th
   assert.equal(readState(work).baseSha, 'aaaa1111');
   rmSync(base, { recursive: true, force: true });
 });
+
+// `--as` is the only way to tell `trivial dev` who the app should think you are, and until now
+// nothing in this suite exercised it. Two shapes are refused rather than interpreted, and both
+// refusals matter more than they look:
+//
+//   `--as :admin` — a role with nobody holding it. Row security reads the role on its own (a `role`
+//   table matches the bare role; a `managed` table's admin disjunct too), so it would serve every
+//   row of those tables while the vendored toolkit, which needs a subject, renders the app's
+//   signed-out branch. Two answers to "who is this", one of them a lie. The workshop refuses the
+//   same shape (previewIdentityFor); this is the other runtime that can mint it.
+//
+//   bare `--as` — the flag parser yields `true`, and the old `as string | undefined` cast turned
+//   that into `TypeError: rawAs.split is not a function`.
+//
+// These assert on the refusal, not on a running server, so they stay hermetic: the process exits
+// before it would bind a port or spawn vite.
+test('trivial dev refuses a role that nobody holds', async () => {
+  const { home, work } = freshDirs();
+  const r = await run(['dev', '--as', ':admin'], { home, cwd: work });
+  assert.equal(r.code, 1, 'a roleless subject must not start the server');
+  assert.match(r.out, /a role needs somebody to hold it/i);
+  assert.match(r.out, /--as alice:admin/, 'the message names the fix, since it is almost always a typo');
+});
+
+test('trivial dev refuses a bare --as instead of crashing on it', async () => {
+  const { home, work } = freshDirs();
+  const r = await run(['dev', '--as'], { home, cwd: work });
+  assert.equal(r.code, 1);
+  assert.match(r.out, /--as needs a user/i);
+  assert.doesNotMatch(r.out, /is not a function|TypeError/, 'it used to die inside String.prototype.split');
+});

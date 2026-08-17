@@ -162,10 +162,15 @@ var __pgliteReady = null;
 // The preview-identity wire — the SW-scope "view as" identity {userId, role}, set by the page via the
 // trivial:set-identity message (see the listener below). Read by the dev handler dispatch (__devDispatch,
 // dev-handler-runtime.ts) so the preview app's OWN fetch('/api/<route>') calls scope to it — those can't
-// carry the x-trivial-as-* headers, so a store value alone isn't enough. null ⇒ owner/sees-all default
-// (byte-identical to today). Lives in the pglite substrate (present whenever the flag is on, independent
-// of handlers) so the single message listener owns it; harmlessly unused when handlers is off.
-var __pgliteViewAs = null;
+// carry the x-trivial-as-* headers, so a store value alone isn't enough. Lives in the pglite substrate
+// so the single message listener owns it; harmlessly unused when handlers is off.
+//
+// null is the OWNER default, and the owner lens scopes as an ANONYMOUS visitor — the generated
+// owner/authenticated predicates are NULLIF(app.user_id, '')-guarded, so a null user matches nothing.
+// This comment used to say "owner/sees-all", which reads as the opposite of what ships and is how a
+// lost identity looks harmless. Undefined means nobody has stated an identity yet, which is a third
+// thing again.
+var __pgliteViewAs;
 
 // the datadir can also die UNDER a handle that booted fine: IDBFS keeps the database open
 // and syncs writes to it, so if the store goes away afterwards (eviction, an external delete, a

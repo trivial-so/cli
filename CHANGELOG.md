@@ -6,6 +6,24 @@ is how a reported version maps back to what it does.
 
 ## 0.21.1 — 2026-08-17
 
+- **`trivial dev --as` refuses two shapes instead of interpreting them.**
+
+  `--as :admin` — a role with nobody holding it — used to run. Row security reads the role on its
+  own, so it served every row of every role-gated and admin-managed table, while the auth toolkit
+  in your app needs a subject and therefore rendered its signed-out branch. Two answers to "who is
+  this", one of them wrong, and the one you would debug is the app's. It is also almost always a
+  typo, so the CLI now says which one: *a role needs somebody to hold it — try `--as alice:admin`*.
+
+  A bare `--as` (or `--as --port 3000`) used to die inside `String.prototype.split` with
+  *"rawAs.split is not a function"*. It now says `--as needs a user`.
+
+  Both checks run before the is-this-a-Trivial-folder check, because a mistyped flag is your typo
+  wherever you typed it, and "not a Trivial project folder" hid it.
+
+  Roles containing a colon are refused wherever an identity enters — the flag, the local sign-in
+  page's token, and the `x-trivial-as-role` header. Those are the platform's own namespace, and an
+  end-user can never hold one.
+
 - **The local sign-in page calls the two kinds of user by their names.** It used to say the same
   button *"signs a real person in once you publish"* — a way of naming people the product retired,
   because it frames the invented ones as fake and the signed-up ones as authentic when the only
@@ -14,7 +32,7 @@ is how a reported version maps back to what it does.
   editor uses, so the page you meet locally and the panel you meet on the web teach one vocabulary
   instead of two.
 
-  No behaviour changed — `--as`, the identity precedence, and the seeded picker are untouched.
+  That change is copy only: the identity precedence and the seeded picker are untouched by it.
 
 ## 0.21.0 — 2026-08-16
 

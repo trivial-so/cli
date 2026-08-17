@@ -124,6 +124,24 @@ export interface DevOptions {
  */
 const DEV_TOKEN_PREFIX = 'dev.';
 
+/** A role is held by somebody, or it is not a role.
+ *
+ *  Row security reads the role on its own — a `role` table matches on the bare role, and a
+ *  `managed` table's admin disjunct does too — so a role with no subject WIDENS what the data
+ *  plane serves, while the vendored toolkit (which needs a subject) tells the maker's own app
+ *  nobody is signed in. Two answers to "who is this", one of them a lie, and the maker debugging
+ *  it is reading the app.
+ *
+ *  `trivial:` prefixed roles are refused outright: those are the platform's own, and the standing
+ *  invariant is that an end-user can never carry one. Local data is fiction and the server is
+ *  loopback-only, so typing one here was not an incident — but an invariant you can type past is
+ *  not one. */
+function sanitizeDevIdentity(userId: string | null, role: string | null): DevIdentity {
+  const sub = typeof userId === 'string' && userId ? userId : null;
+  const r = typeof role === 'string' && role && !role.includes(':') ? role : null;
+  return sub ? { userId: sub, role: r } : { userId: null, role: null };
+}
+
 /** `Authorization: Bearer dev.<b64url>` → the identity it names, or null for anything else. */
 function decodeDevToken(auth: string | string[] | undefined): DevIdentity | null {
   const raw = Array.isArray(auth) ? auth[0] : auth;
@@ -140,7 +158,7 @@ function decodeDevToken(auth: string | string[] | undefined): DevIdentity | null
       : typeof p?.userId === 'string' && p.userId ? p.userId
       : null;
     const role = typeof p?.role === 'string' && p.role ? p.role : null;
-    return { userId: claimed, role };
+    return sanitizeDevIdentity(claimed, role);
   } catch { return null; }
 }
 
@@ -150,10 +168,10 @@ function resolveDevIdentity(req: http.IncomingMessage, ambient: DevIdentity): De
   const hu = req.headers['x-trivial-as-user'];
   const hr = req.headers['x-trivial-as-role'];
   if ((typeof hu === 'string' && hu) || (typeof hr === 'string' && hr)) {
-    return {
-      userId: (typeof hu === 'string' && hu) ? hu : ambient.userId,
-      role: (typeof hr === 'string' && hr) ? hr : ambient.role,
-    };
+    return sanitizeDevIdentity(
+      (typeof hu === 'string' && hu) ? hu : ambient.userId,
+      (typeof hr === 'string' && hr) ? hr : ambient.role,
+    );
   }
   return decodeDevToken(req.headers.authorization) ?? ambient;
 }

@@ -78,6 +78,26 @@ async function loadContext(folder: string): Promise<{ state: State; token: strin
  * projectId, which the data plane's cross-project wall compares against.
  */
 async function cmdDev(args: Args): Promise<void> {
+  // `--as alice` / `--as alice:admin` previews as a Local user, optionally carrying a declared
+  // role. `--as anon` (or no flag) is signed out.
+  //
+  // Two shapes are refused rather than interpreted. A bare `--as` sets the flag to `true`, and the
+  // old `as string | undefined` cast hid that behind a TypeError on `.split`. And `--as :admin` —
+  // a role with nobody holding it — used to become { userId: null, role: 'admin' }, which reads
+  // every row of every `role` and `managed` table while the app's own toolkit, needing a subject,
+  // renders its signed-out branch. It is also almost certainly a typo for `--as alice:admin`, so
+  // saying so beats quietly previewing as somebody else.
+  const rawAs = args.flags.as;
+  if (rawAs === true) die('--as needs a user: trivial dev --as alice, or --as alice:admin');
+  const asText = typeof rawAs === 'string' ? rawAs.trim() : '';
+  const [asSub, asRole] = asText.split(':');
+  if (asText && asText !== 'anon' && !asSub) {
+    die(`a role needs somebody to hold it — try \`--as alice${asRole ? `:${asRole}` : ''}\` (got \`--as ${asText}\`)`);
+  }
+  const identity = !asText || asText === 'anon'
+    ? { userId: null, role: null }
+    : { userId: asSub, role: asRole || null };
+
   const folder = process.cwd();
   const state = await readState(folder);
   // Fall back to the build-injected config, so a `.tar.gz` download works too.
@@ -92,11 +112,6 @@ async function cmdDev(args: Args): Promise<void> {
     die('not a Trivial project folder (no .trivial/state.json and no src/trivial.config.json).\n  Run `trivial clone <owner>/<slug>` first.');
   }
 
-  const rawAs = args.flags.as as string | undefined;
-  const identity = !rawAs || rawAs === 'anon'
-    ? { userId: null, role: null }
-    // `--as alice:admin` previews as a Local user carrying a declared role.
-    : { userId: rawAs.split(':')[0] || null, role: rawAs.split(':')[1] ?? null };
 
   const { runDev } = await import('./dev.js');
   await runDev({

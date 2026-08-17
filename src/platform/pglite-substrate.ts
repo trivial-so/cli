@@ -37,7 +37,10 @@ export { PGLITE_CORE_SOURCE };
  */
 export const PGLITE_IDENTITY_WIRE_SOURCE = String.raw`
 // === preview identity + data plane wire (relay-only) =========================================
-var __pgliteViewAs = null;
+// Left undefined, not null: null is a stated identity (the owner), undefined is "nobody has said".
+// Conflating them is what let a restarted worker serve anonymous rows under a chrome that still
+// claimed a role, on the platform side of this same code.
+var __pgliteViewAs;
 
 // Which data this frame reads: its maker's Draft (the default) or the project's Live data.
 //
