@@ -187,7 +187,7 @@ function __dataMapError(e) {
 }
 //  — the remedial-preview wire. When the app's OWN data calls hit the signed-out wall
 // (this plane has no sees-all: owner-default scopes as anonymous), the frame chrome should teach
-// the remedy ("pick a test user"), not leave the app looking silently broken. The SW is the ONE
+// the remedy ("pick a Local user"), not leave the app looking silently broken. The SW is the ONE
 // place that knows both the identity and the refusal, so it emits a debounced note to its window
 // clients; the shell forwards it to the workshop, which renders the remedy pill on the frame —
 // never injected into the app's own UI. Debounce: once per table+reason per 30s window, reset

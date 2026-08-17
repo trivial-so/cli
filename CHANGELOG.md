@@ -4,6 +4,18 @@ User-facing changes to the `trivial` CLI. Any change in behaviour bumps the vers
 entry here: the version is baked into the bundle at build time (`trivial --version`), so this file
 is how a reported version maps back to what it does.
 
+## 0.21.1 — 2026-08-17
+
+- **The local sign-in page calls the two kinds of user by their names.** It used to say the same
+  button *"signs a real person in once you publish"* — a way of naming people the product retired,
+  because it frames the invented ones as fake and the signed-up ones as authentic when the only
+  difference is which world they live in. It now says what they are: pick a **Local user**, someone
+  you invent; once you publish, the same button signs in your **Live users**. Same two words the
+  editor uses, so the page you meet locally and the panel you meet on the web teach one vocabulary
+  instead of two.
+
+  No behaviour changed — `--as`, the identity precedence, and the seeded picker are untouched.
+
 ## 0.21.0 — 2026-08-16
 
 - **A push can bring files back, and now it does.** Pushing does not only send your files: the

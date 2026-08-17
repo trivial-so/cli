@@ -196,8 +196,8 @@ function devSignInPage(returnTo: string, users: string[], roles: string[], curre
 </style>
 <main>
  <h1>Sign in — local dev</h1>
- <p>This is <code>trivial dev</code>. Pick who your app should think you are; the same button signs a real
-    person in once you publish.</p>
+ <p>This is <code>trivial dev</code>. Pick a <strong>Local user</strong> — someone you invent.
+    Once you publish, the same button signs in your Live users.</p>
  ${users.length ? `<div class="row">${users.map(opt).join('')}</div>` : ''}
  <div class="row">
    <input id="uid" placeholder="any user id" value="${esc(current.userId ?? '')}" style="flex:1;min-width:9rem">
