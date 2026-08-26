@@ -4,8 +4,24 @@ import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, relative, sep, dirname } from 'node:path';
 
-// Not synced — mirrors what the server's git tree already excludes.
-const IGNORE = new Set(['.git', '.trivial', 'node_modules', 'dist', 'build']);
+// Not synced. This mirrors the server's own deny list (`SYSTEM_PATH_PATTERNS`), and the mirroring
+// is the whole point: `hashTree` walks the FOLDER and never consults .gitignore, so a directory only
+// has to EXIST on disk to enter the write-set — and the write path is validate-all-then-write-all,
+// so one denied path rejects the whole push.
+//
+// It drifted, and the drift was user-visible. The server also denies `.pnpm-store`, `releases`,
+// `.next` and `.cache`; this set had none of them, and `isPlatformManaged` below could not cover for
+// it because that one matches BASENAMES against a file list and never a directory. So any maker whose
+// tooling had once produced a `.cache/` — which is a great deal of ordinary tooling — had every
+// `trivial push` refused whole, naming a file they did not write. Exactly the failure the
+// PLATFORM_MANAGED partition exists to prevent.
+//
+// `build` is here and NOT on the server's list; that asymmetry is deliberate and harmless (declining
+// to upload build output costs nothing, and the pull path already handles a project that commits it).
+const IGNORE = new Set([
+  '.git', '.trivial', 'node_modules', 'dist', 'build',
+  '.pnpm-store', 'releases', '.next', '.cache',
+]);
 
 /** True for a path hashTree cannot see, at any depth. The pull writes whatever the cloud sends,
  *  including paths inside this set (a project may commit `build/`), but must NOT baseline them:

@@ -469,6 +469,32 @@ test('push skips platform-managed files and still lands the real edit', async ()
   rmSync(base, { recursive: true, force: true });
 });
 
+test('push ignores build-tool directories the SERVER denies, not just the ones we thought of', async () => {
+  // The regression: IGNORE listed .git/.trivial/node_modules/dist/build while the server's
+  // SYSTEM_PATH_PATTERNS also denies .pnpm-store, releases, .next and .cache. hashTree walks the
+  // FOLDER and never reads .gitignore, so a directory only had to EXIST to enter the write-set —
+  // and one denied path rejects the WHOLE set. isPlatformManaged could not cover for it: it matches
+  // basenames against a FILE list, never a directory. Net effect: anyone whose tooling had ever
+  // produced a .cache/ had every push refused, naming a file they did not write.
+  const { home, work, base } = freshDirs();
+  clonedFixture(home, work);
+  for (const dir of ['.cache', '.next', 'releases', '.pnpm-store']) {
+    mkdirSync(join(work, dir), { recursive: true });
+    writeFileSync(join(work, dir, 'artifact.txt'), 'tooling output');
+  }
+  writeFileSync(join(work, 'index.html'), '<h1>edited</h1>');
+  mock.routes[`POST /api/projects/${PROJECT}/write-set`] = ({ body }) => {
+    assert.deepEqual(body.files.map((f) => f.path).sort(), ['index.html']);
+    return [200, { commit: 'eeee5555' }];
+  };
+  const r = await run(['push', '-m', 'edit'], { home, cwd: work });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /pushed 1 write\(s\), 0 delete\(s\)/);
+  // Silently skipped, not reported: these are build output, not something the maker authored.
+  assert.doesNotMatch(r.out, /\.cache|\.next|releases|\.pnpm-store/);
+  rmSync(base, { recursive: true, force: true });
+});
+
 test('status reports platform-managed changes separately rather than hiding them', async () => {
   const { home, work, base } = freshDirs();
   clonedFixture(home, work);
