@@ -173,6 +173,7 @@ function __dataJson(status, body) {
 // detail. PGLite is real Postgres, so the same error .code map applies (42501 = RLS/role wall).
 function __dataMapError(e) {
   var msg = String((e && e.message) || e);
+  if (e && e.status === 400) return __dataJson(400, { error: msg });
   if (msg === 'no updatable fields') return __dataJson(400, { error: 'no updatable fields' });
   if (msg.indexOf('forbidden: cannot write withheld field') === 0) return __dataJson(403, { error: msg });
   // The run wire's missing-table body comes from the introspection layer ('table not found'),
@@ -249,9 +250,7 @@ async function __dataDispatch(request, url, viewAs) {
     var method = request.method.toUpperCase();
     if (method === 'GET' && id == null) {
       var limit = Number(url.searchParams.get('limit')) || 50;
-      var rawCur = url.searchParams.get('cursor');
-      var curN = rawCur == null ? NaN : Number(rawCur);
-      var cursor = isFinite(curN) ? curN : null;
+      var cursor = url.searchParams.get('cursor');
       var page = await ctx.list(table, { limit: limit, cursor: cursor });
       // The preview remedy: an EMPTY read on an IDENTITY-SCOPED table under an anonymous identity is empty BY
       // CONSTRUCTION (RLS hides every row) — the app just looks broken. Teach the remedy. Keyed on

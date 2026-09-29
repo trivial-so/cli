@@ -53,7 +53,20 @@ export const DEV_DATA_CORE_SOURCE = String.raw`
 // === dev data core — idents · projection · introspection · RLS ctx verbs (pglite-gated) ======
 var __DEV_MAX_LIMIT = 200;
 function __devSafeIdent(name) { return /^[a-z_][a-z0-9_]{0,62}$/i.test(String(name == null ? '' : name)); }
-function __devCoerceId(id) { return (typeof id === 'number') ? id : (/^\d+$/.test(String(id)) ? Number(id) : id); }
+function __devBadRequest(msg) { var e = new Error(msg); e.status = 400; return e; }
+function __devExactRowId(id) {
+  if (typeof id === 'number' && !Number.isSafeInteger(id)) {
+    throw __devBadRequest('numeric row IDs must be safe integers; pass an exact string');
+  }
+  return id;
+}
+
+function __devExactCursor(value) {
+  if (value == null) return null;
+  if (typeof value === 'string' && value.length <= 512) return value;
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
+  throw __devBadRequest('cursor must be an exact string (max 512 characters) or a safe integer');
+}
 
 // ── per-FIELD READ projection — the BYTE-FAITHFUL dev mirror of field-projection.ts.
 // Parity-pinned to the run side by an exhaustive test (dev-handler-runtime.test.ts) over the closed rule ×
@@ -140,7 +153,20 @@ function __devOwnerColOf(meta) {
 // set ({name, public_desc}, not {…, secret_motive: null}). isRowOwner recomputed independently (the row's
 // owner value vs the caller id); anon (userId null) is never owner. Unruled tables short-circuit (the raw
 // row). meta.fields is a Map (prototype-safe lookups for odd column idents), mirroring the run side.
+function __devWireValue(value) {
+  if (typeof value === 'bigint') return String(value);
+  if (!Array.isArray(value)) return value;
+  var changed = false;
+  var items = value.map(function (item) { var next = __devWireValue(item); if (next !== item) changed = true; return next; });
+  return changed ? items : value;
+}
 function __devProjectRowShape(row, meta, userId, role) {
+  var changed = false;
+  var entries = Object.entries(row).map(function (entry) {
+    var value = __devWireValue(entry[1]); if (value !== entry[1]) changed = true;
+    return [entry[0], value];
+  });
+  if (changed) row = Object.fromEntries(entries);
   if (!meta.fields || meta.fields.size === 0) return row;
   var ownerCol = __devOwnerColOf(meta);
   var ownerVal = ownerCol ? row[ownerCol] : undefined;
@@ -208,7 +234,7 @@ function __devMakeCtx(db, identity) {
       opts = opts || {};
       var meta = await __devColumnsOf(db, table);
       var lim = Math.min(Math.max(1, Number(opts.limit) || 50), __DEV_MAX_LIMIT);
-      var cursor = (opts.cursor == null) ? null : opts.cursor;
+      var cursor = __devExactCursor(opts.cursor);
       var q = 'public."' + table + '"';
       return __devAsUser(db, userId, role, async function (tx) {
         var res;
@@ -221,7 +247,7 @@ function __devMakeCtx(db, identity) {
         }
         var rawPage = res.rows.slice(0, lim);
         var last = rawPage[rawPage.length - 1];
-        var nextCursor = (res.rows.length > lim && last && typeof last.id === 'number') ? last.id : null;
+        var nextCursor = (res.rows.length > lim && last && last.id != null) ? __devExactCursor(__devWireValue(last.id)) : null;
         // Per-field READ projection — mask owner-only / role-gated columns per row for a non-permitted
         // reader (the SAME masking the run side applies). id is read=all so it survives → nextCursor (from
         // the raw page above) is unaffected. Unruled tables (fields empty) pass through byte-identically.
@@ -297,6 +323,7 @@ function __devMakeCtx(db, identity) {
     // RLS USING scopes which rows you may touch; owner + id are stripped so ownership/PK can't be reassigned.
     // null ⇒ no row matched (missing or RLS-hidden).
     update: async function (table, id, values) {
+      var exactId = __devExactRowId(id);
       var meta = await __devColumnsOf(db, table);
       var strip = { id: true };
       for (var k = 0; k < meta.owner.length; k++) strip[meta.owner[k]] = true;
@@ -317,7 +344,7 @@ function __devMakeCtx(db, identity) {
       var q = 'public."' + table + '"';
       return __devAsUser(db, userId, role, async function (tx) {
         if (needsGate) {
-          var tr = await tx.query('SELECT ' + (gateOwnerCol ? '"' + gateOwnerCol + '"' : 'NULL') + ' AS __owner FROM ' + q + ' WHERE id = $1', [__devCoerceId(id)]);
+          var tr = await tx.query('SELECT ' + (gateOwnerCol ? '"' + gateOwnerCol + '"' : 'NULL') + ' AS __owner FROM ' + q + ' WHERE id = $1', [exactId]);
           if (!tr.rows.length) return null;
           var targetOwner = tr.rows[0].__owner;
           var isRowOwner = gateOwnerCol != null && userId != null && targetOwner != null && String(targetOwner) === String(userId);
@@ -325,7 +352,7 @@ function __devMakeCtx(db, identity) {
         }
         var sets = entries.map(function (e, i) { return '"' + e[0] + '" = $' + (i + 1); }).join(', ');
         var params = entries.map(function (e) { return e[1]; });
-        params.push(__devCoerceId(id));
+        params.push(exactId);
         var res = await tx.query('UPDATE ' + q + ' SET ' + sets + ' WHERE id = $' + (entries.length + 1) + ' RETURNING *', params);
         // Project the returned row (READ masking) the same as a read — null ⇒ no row matched (RLS-hidden).
         var updated = res.rows[0] || null;
@@ -334,10 +361,11 @@ function __devMakeCtx(db, identity) {
     },
     // RLS USING scopes the delete to rows you own. Returns whether a row was actually deleted.
     remove: async function (table, id) {
+      var exactId = __devExactRowId(id);
       if (!__devSafeIdent(table)) throw new Error('invalid table: ' + table);
       var q = 'public."' + table + '"';
       return __devAsUser(db, userId, role, async function (tx) {
-        var res = await tx.query('DELETE FROM ' + q + ' WHERE id = $1 RETURNING id', [__devCoerceId(id)]);
+        var res = await tx.query('DELETE FROM ' + q + ' WHERE id = $1 RETURNING id', [exactId]);
         return res.rows.length > 0;
       });
     },
@@ -852,7 +880,7 @@ export interface DevIdentity {
 
 /** The PGLite-backed structured ops — the IDENTICAL surface `worker-entry.ts` exposes on the publish side. */
 export interface DevCtx {
-  list(table: string, opts?: { cursor?: number | null; limit?: number }): Promise<{ rows: Array<Record<string, unknown>>; nextCursor: number | null }>;
+  list(table: string, opts?: { cursor?: number | string | null; limit?: number }): Promise<{ rows: Array<Record<string, unknown>>; nextCursor: number | string | null }>;
   insert(table: string, values: Record<string, unknown>): Promise<Record<string, unknown> | null>;
   update(table: string, id: string | number, values: Record<string, unknown>): Promise<Record<string, unknown> | null>;
   remove(table: string, id: string | number): Promise<boolean>;
@@ -872,7 +900,7 @@ export interface DevColMeta { all: string[]; owner: string[]; hasId: boolean; fi
 export interface DevRuntime {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   __devSafeIdent(name: unknown): boolean;
-  __devCoerceId(id: string | number): string | number;
+  __devExactRowId(id: string | number): string | number;
   __devColumnsOf(db: any, table: string): Promise<DevColMeta>;
   __devAsUser<T>(db: any, userId: string | null, role: string | null, fn: (tx: any) => Promise<T>): Promise<T>;
   __devMakeCtx(db: any, identity: DevIdentity): DevCtx;
@@ -900,7 +928,7 @@ export function loadDevRuntime(): DevRuntime {
   // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
   const factory = new Function(
     DEV_DATA_CORE_SOURCE + DEV_HANDLER_RUNTIME_SOURCE + DEV_CURATED_RESOLVER_SOURCE +
-      '\nreturn { __devSafeIdent, __devCoerceId, __devColumnsOf, __devAsUser, __devMakeCtx, __devRunHandler,' +
+      '\nreturn { __devSafeIdent, __devExactRowId, __devColumnsOf, __devAsUser, __devMakeCtx, __devRunHandler,' +
       ' __devParseFieldRule, __devOwnerColOf, __devIsColumnReadable, __devIsColumnWritable,' +
       ' __devRejectWithheldWrites, __devProjectRowShape,' +
       ' __devResolveCuratedImports, __DEV_CURATED_DEPS };',

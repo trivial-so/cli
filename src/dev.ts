@@ -323,7 +323,8 @@ export async function runDev(opts: DevOptions): Promise<void> {
 
   if (schema) {
     const { PGlite } = await loadPGlite();
-    db = new PGlite();
+    // Match the hosted data layer for both small and large bigint values.
+    db = new PGlite({ parsers: { 20: (value: string) => value } });
     // The role wall the generated grants target. The SW substrate ensures it the same way.
     await db.exec('CREATE ROLE app_user NOLOGIN;').catch(() => { /* already exists */ });
     await db.exec(schema.ddl);
