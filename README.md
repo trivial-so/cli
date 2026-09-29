@@ -70,8 +70,9 @@ pnpm test          # builds, then runs the suite against the built bundle
 pnpm build         # → dist/trivial.cjs, the single file the installer downloads
 ```
 
-The tests are black-box: they spawn the built bundle against an in-process mock of the API, so what
-is verified is the artifact you would run, not the source it came from.
+Command tests spawn the built bundle against an in-process mock of the API. Runtime tests also
+check exact SQL parameters, JSON-safe bigint values, and HTTP continuation keys against captured
+database calls. Those runtime checks do not substitute for PostgreSQL ordering or RLS tests.
 
 ## `src/platform/`
 
