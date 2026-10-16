@@ -1,4 +1,4 @@
-/** Retained model transfer (ADR 0257). Same portable layout as project archives.
+/** Retained model transfer. Same portable layout as project archives.
  * Canonical declaration/path validators are vendored unchanged from the platform.
  * No model bytes enter Git or the source write-set. Local files are never pruned. */
 import { promises as fs, constants } from 'node:fs';
