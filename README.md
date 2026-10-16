@@ -67,7 +67,8 @@ including models removed from the current scene. Their immutable manifests and v
 resource bytes live in `.trivial/model-assets/`, outside Git and source sync. Downloads
 resume by reusing verified files; changed local files are preserved and reported.
 Unfinished uploads are reported separately. Plain `git clone` carries source only;
-run `trivial clone` when the project includes retained models. The portable files do
+run `trivial clone` when the project includes retained models. `trivial sync` continues
+to sync source; use `trivial pull` to refresh model assets. The portable files do
 not add a local World editor or publish model assets automatically.
 
 ## Building it yourself

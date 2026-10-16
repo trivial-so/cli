@@ -17,7 +17,7 @@ function catalog(value: unknown, projectId: string): Catalog {
     || !Number.isInteger(v.incomplete) || v.incomplete < 0 || v.incomplete + v.bundles.length > 128) throw new Error('Invalid model asset index.');
   const ids = new Set<string>(), hashes = new Set<string>();
   for (const ref of v.bundles) {
-    if (!ref || !UUID.test(ref.id) || !SHA.test(ref.sha256) || ids.has(ref.id) || hashes.has(ref.sha256)) throw new Error('Invalid model asset identity.');
+    if (!ref || typeof ref.id !== 'string' || typeof ref.sha256 !== 'string' || !UUID.test(ref.id) || !SHA.test(ref.sha256) || ids.has(ref.id) || hashes.has(ref.sha256)) throw new Error('Invalid model asset identity.');
     ids.add(ref.id); hashes.add(ref.sha256);
   }
   return { version: 1, projectId, bundles: v.bundles.map(({ id, sha256 }) => ({ id, sha256 })), incomplete: v.incomplete };
