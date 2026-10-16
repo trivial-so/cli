@@ -62,6 +62,14 @@ The CLI's own sync verbs always use the change feed. Git is yours to drive direc
 Authentication for Git goes through a credential helper (`trivial git-credential`), so no token is
 ever written into `.git/config`, a remote URL, or your shell history.
 
+`trivial clone` and `trivial pull` also copy completed retained World model assets,
+including models removed from the current scene. Their immutable manifests and verified
+resource bytes live in `.trivial/model-assets/`, outside Git and source sync. Downloads
+resume by reusing verified files; changed local files are preserved and reported.
+Unfinished uploads are reported separately. Plain `git clone` carries source only;
+run `trivial clone` when the project includes retained models. The portable files do
+not add a local World editor or publish model assets automatically.
+
 ## Building it yourself
 
 ```sh

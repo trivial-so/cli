@@ -1,5 +1,10 @@
 # trivial CLI changelog
 
+## 0.22.0 — retained model files
+
+`clone` and `pull` include complete retained World model manifests and resource bytes in `.trivial/model-assets/`, including assets no longer in the current scene. Transfers check canonical manifests and full resource hashes, use bounded chunks, reuse verified files, preserve changed local files, and report unfinished uploads. Source files remain available after a failed asset transfer; retry with `trivial pull`. Plain Git transport remains source-only.
+
+
 User-facing changes to the `trivial` CLI. Any change in behaviour bumps the version and adds an
 entry here: the version is baked into the bundle at build time (`trivial --version`), so this file
 is how a reported version maps back to what it does.

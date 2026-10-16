@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +49,9 @@ before(async () => {
       }
       // A string payload is served raw (the update tests serve a fake bundle);
       // everything else is JSON.
-      if (typeof payload === 'string') {
+      if (Buffer.isBuffer(payload)) {
+        res.writeHead(status, { 'Content-Type': 'application/octet-stream' }); res.end(payload);
+      } else if (typeof payload === 'string') {
         res.writeHead(status, { 'Content-Type': 'text/plain' });
         res.end(payload);
       } else {
@@ -1971,4 +1973,110 @@ test('trivial dev refuses a bare --as instead of crashing on it', async () => {
   assert.equal(r.code, 1);
   assert.match(r.out, /--as needs a user/i);
   assert.doesNotMatch(r.out, /is not a function|TypeError/, 'it used to die inside String.prototype.split');
+});
+
+// Retained model resources travel independently of Git/source bytes.
+function modelAssetRoutes({ corrupt = false, denied = false, incomplete = 1 } = {}) {
+  const bytes = Buffer.alloc(1024 * 1024 + 17, 0x6d);
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const manifest = { version: 1, entry: 'scene.glb', files: [{ path: 'scene.glb', sha256: hash, bytes: bytes.length }] };
+  const sha256 = createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
+  const ref = { id: '33333333-3333-4333-8333-333333333333', sha256 };
+  const prefix = `/api/projects/${PROJECT}/models`, route = `${prefix}/${ref.id}/${sha256}`;
+  mock.routes[`GET ${prefix}/snapshot`] = () => denied ? [403, {}] : [200, { version: 1, projectId: PROJECT, bundles: [ref], incomplete }];
+  mock.routes[`GET ${route}/manifest`] = () => [200, { ...ref, manifest }];
+  for (let i = 0; i < 2; i++) mock.routes[`GET ${route}/resources/${hash}/chunks/${i}`] = ({ auth }) => {
+    assert.match(auth, /^Bearer trv_/);
+    const chunk = bytes.subarray(i * 1024 * 1024, Math.min(bytes.length, (i + 1) * 1024 * 1024));
+    return [200, corrupt ? Buffer.alloc(chunk.length, 0x6e) : chunk];
+  };
+  return { bytes, hash, manifest, ref, route, prefix };
+}
+
+test('Git clone includes retained unused model assets without adding them to Git or the source baseline', async () => {
+  const { home, work, base } = freshDirs();
+  try {
+    writeCreds(home, { [API]: 'trv_broad' }); mockResolveAndChanges(); const model = modelAssetRoutes();
+    serverRepo(base, 'alice', 'shop', { 'index.html': '<h1>shop</h1>' });
+    const result = await run(['clone', 'alice/shop', '--api', API, '--git-url', serverGitUrl(base)], { home, cwd: work });
+    assert.equal(result.code, 0, result.out); assert.match(result.out, /with history/); assert.match(result.out, /unfinished model upload/);
+    const folder = join(work, 'shop'), assets = join(folder, '.trivial/model-assets');
+    assert.deepEqual(readFileSync(join(assets, 'resources', model.hash)), model.bytes);
+    assert.deepEqual(JSON.parse(readFileSync(join(assets, 'manifests', model.ref.id + '.json'))), model.manifest);
+    assert.deepEqual(JSON.parse(readFileSync(join(assets, 'index.json'))).bundles, [model.ref]);
+    assert.ok(!Object.keys(readState(folder).files).some(name => name.includes('model-assets')));
+    assert.ok(!execFileSync('git', ['ls-files'], { cwd: folder }).toString().includes('model-assets'));
+    assert.ok(!mock.requests.some(q => q.path.endsWith('/changes')));
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test('project-token clone verifies model chunks and pull reuses them without downloading again', async () => {
+  const { home, work, base } = freshDirs();
+  try {
+    mockResolveAndChanges(); const model = modelAssetRoutes();
+    const cloned = await run(['clone', 'copy', '--project', PROJECT, '--token', 'trv_project', '--api', API], { home, cwd: work });
+    assert.equal(cloned.code, 0, cloned.out); const folder = join(work, 'copy');
+    mock.requests = [];
+    const pulled = await run(['pull'], { home, cwd: folder }); assert.equal(pulled.code, 0, pulled.out);
+    assert.match(pulled.out, /0 new bytes/); assert.ok(!mock.requests.some(q => q.path.includes('/chunks/')));
+    assert.deepEqual(readFileSync(join(folder, '.trivial/model-assets/resources', model.hash)), model.bytes);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test('corrupt model bytes fail clone while retaining source, then pull recovers with no partial index', async () => {
+  const { home, work, base } = freshDirs();
+  try {
+    mockResolveAndChanges(); const model = modelAssetRoutes({ corrupt: true });
+    const cloned = await run(['clone', 'copy', '--project', PROJECT, '--token', 'trv_project', '--api', API], { home, cwd: work });
+    assert.equal(cloned.code, 1, cloned.out); assert.match(cloned.out, /hash mismatch/);
+    const folder = join(work, 'copy'), assets = join(folder, '.trivial/model-assets');
+    assert.ok(existsSync(join(folder, 'index.html'))); assert.ok(!existsSync(join(assets, 'index.json')));
+    assert.deepEqual(readdirSync(join(assets, 'resources')), []);
+    modelAssetRoutes(); const recovered = await run(['pull'], { home, cwd: folder });
+    assert.equal(recovered.code, 0, recovered.out); assert.ok(existsSync(join(assets, 'index.json')));
+    assert.deepEqual(readFileSync(join(assets, 'resources', model.hash)), model.bytes);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test('changed local model bytes are preserved and fail verification rather than being overwritten', async () => {
+  const { home, work, base } = freshDirs();
+  try {
+    clonedFixture(home, work); mockResolveAndChanges(); const model = modelAssetRoutes();
+    const initial = await run(['pull'], { home, cwd: work }); assert.equal(initial.code, 0, initial.out);
+    const path = join(work, '.trivial/model-assets/resources', model.hash); writeFileSync(path, 'keep this local edit'); mock.requests = [];
+    const result = await run(['pull'], { home, cwd: work }); assert.equal(result.code, 1, result.out);
+    assert.match(result.out, /local model resource was changed/); assert.equal(readFileSync(path, 'utf8'), 'keep this local edit');
+    assert.ok(!mock.requests.some(q => q.path.includes('/chunks/')));
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test('model manifest and index identities cannot choose local paths', async () => {
+  const { home, work, base } = freshDirs();
+  try {
+    clonedFixture(home, work); mockResolveAndChanges(); const model = modelAssetRoutes();
+    mock.routes[`GET ${model.prefix}/snapshot`] = () => [200, { version: 1, projectId: PROJECT, bundles: [{ ...model.ref, id: '../escape' }], incomplete: 0 }];
+    const result = await run(['pull'], { home, cwd: work }); assert.equal(result.code, 1, result.out);
+    assert.match(result.out, /Invalid model asset identity/); assert.ok(!existsSync(join(work, 'escape')));
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test('model download refuses symlink storage directories without changing the destination', async () => {
+  const { home, work, base } = freshDirs();
+  try {
+    clonedFixture(home, work); mockResolveAndChanges(); modelAssetRoutes();
+    const elsewhere = join(base, 'elsewhere'); mkdirSync(elsewhere); writeFileSync(join(elsewhere, 'keep'), 'unchanged');
+    symlinkSync(elsewhere, join(work, '.trivial/model-assets'));
+    const result = await run(['pull'], { home, cwd: work }); assert.equal(result.code, 1, result.out);
+    assert.match(result.out, /regular directory/); assert.deepEqual(readdirSync(elsewhere), ['keep']);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test('revoked model reads cannot report a complete clone', async () => {
+  const { home, work, base } = freshDirs();
+  try {
+    mockResolveAndChanges(); modelAssetRoutes({ denied: true });
+    const result = await run(['clone', 'copy', '--project', PROJECT, '--token', 'trv_project', '--api', API], { home, cwd: work });
+    assert.equal(result.code, 1, result.out); assert.match(result.out, /HTTP 403/); assert.match(result.out, /Source and previously verified model files are retained/);
+    assert.ok(existsSync(join(work, 'copy/index.html')));
+  } finally { rmSync(base, { recursive: true, force: true }); }
 });
