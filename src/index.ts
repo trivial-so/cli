@@ -25,6 +25,7 @@ import {
 } from './git.js';
 import { diffLines, countChanges, renderDiff } from './diff.js';
 import { situationScreen, helpText, suggest } from './screens.js';
+import { pullModelAssets } from './model-assets.js';
 
 const DEFAULT_API = 'https://api.trivial.so';
 
@@ -1086,6 +1087,7 @@ async function cmdClone(args: Args): Promise<void> {
     if (out.kind === 'incomplete') await abandonClone(dir, out);
     const count = out.kind === 'applied' ? out.count : 0;
     await ensureLocalConfig(dir, state.projectId);
+    await pullModelAssets(dir, apiUrl, state.projectId, flagToken);
     console.log(`✓ cloned ${count} files into ${dir}/  (@ ${short(state.baseSha)})`);
     warnIfEmptyClone(count, state.baseSha);
     return;
@@ -1109,6 +1111,7 @@ async function cmdClone(args: Args): Promise<void> {
       gitUrlFlag: args.flags['git-url'] as string | undefined,
     });
     if (g.ok) {
+      await pullModelAssets(dir, apiUrl, proj.id, token!);
       console.log(`✓ cloned ${proj.owner}/${proj.slug} → ${dir}/  (${g.count} files @ ${short(g.baseSha)}, with history)`);
       console.log(`  git remote "trivial" → ${g.url}  —  \`git pull\` / \`git push\` work here.`);
       warnIfEmptyClone(g.count, g.baseSha);
@@ -1125,6 +1128,7 @@ async function cmdClone(args: Args): Promise<void> {
   if (out.kind === 'incomplete') await abandonClone(dir, out);
   const count = out.kind === 'applied' ? out.count : 0;
   await ensureLocalConfig(dir, state.projectId);
+  await pullModelAssets(dir, apiUrl, state.projectId, token!);
   console.log(`✓ cloned ${proj.owner ?? '?'}/${proj.slug} → ${dir}/  (${count} files @ ${short(state.baseSha)})`);
   warnIfEmptyClone(count, state.baseSha);
   await printCloneNextSteps(dir);
@@ -1470,6 +1474,7 @@ async function cmdPull(args: Args): Promise<void> {
   if (out.kind === 'conflict') {
     die(`${out.files.length} file(s) changed on both sides — resolve, or re-run with --force to take the cloud:\n  ${out.files.join('\n  ')}\n  (--force discards your version of these — including deleting any the cloud no longer has)`);
   }
+  await pullModelAssets(folder, state.apiUrl, state.projectId, token);
   console.log(out.count ? `✓ pulled ${out.count} change(s)  (@ ${short(out.head)})` : `✓ already up to date  (@ ${short(out.head)})`);
 }
 
